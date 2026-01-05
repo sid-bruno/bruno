@@ -1,5 +1,4 @@
-
-import { expect } from "@jest/globals"
+import { expect } from '@jest/globals';
 import { uuid } from '../utils/testUtils';
 import { collectionSchema } from './index';
 

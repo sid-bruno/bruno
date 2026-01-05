@@ -8,10 +8,8 @@ export const uuid = (): string => {
   return customNanoId();
 };
 
-export const validationErrorWithMessages = (...errors: string[]): any => {
+export const validationErrorWithMessages = (...errors: string[]): ReturnType<typeof expect.objectContaining> => {
   return expect.objectContaining({
     errors
   });
 };
-
-export { expect };

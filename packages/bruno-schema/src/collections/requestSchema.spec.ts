@@ -1,4 +1,5 @@
-import { expect, uuid } from '../utils/testUtils';
+import { expect } from "@jest/globals";
+import { uuid } from '../utils/testUtils';
 import { requestSchema } from './index';
 
 describe('Request Schema Validation', () => {

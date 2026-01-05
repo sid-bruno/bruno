@@ -565,7 +565,7 @@ const folderRootSchema = yup.object({
   .noUnknown(true)
   .nullable();
 
-export const itemSchema: any = yup.object({
+export const itemSchema: yup.AnyObjectSchema = yup.object({
   uid: uidSchema,
   type: yup
     .string()
@@ -620,7 +620,7 @@ export const itemSchema: any = yup.object({
   items: yup.array().of(
     yup.lazy(() => {
       return itemSchema;
-    })
+    }) as unknown as yup.AnySchema
   ),
   examples: yup.array().of(exampleSchema).when('type', {
     is: (type: unknown): type is string =>
