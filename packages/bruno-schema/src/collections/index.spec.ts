@@ -144,7 +144,7 @@ describe('Collection Schema Validation', () => {
     const collection = {
       version: '1',
       uid: uuid(),
-      name: 'My collection',
+      name: 'My Collection',
       items: [
         {
           uid: uuid(),
@@ -169,7 +169,7 @@ describe('Collection Schema Validation', () => {
     const collection = {
       version: '1',
       uid: uuid(),
-      name: 'My collection',
+      name: 'My Collection',
       items: [
         {
           uid: uuid(),
@@ -178,7 +178,7 @@ describe('Collection Schema Validation', () => {
           items: [
             {
               uid: uuid(),
-              name: 'Get countries',
+              name: 'Get Countries',
               type: 'http-request',
               request: {
                 url: 'https://restcountries.com/v2/alpha/in',
@@ -192,7 +192,7 @@ describe('Collection Schema Validation', () => {
             },
             {
               uid: uuid(),
-              name: 'Second level folder',
+              name: 'Second Level Folder',
               type: 'folder'
             }
           ]
