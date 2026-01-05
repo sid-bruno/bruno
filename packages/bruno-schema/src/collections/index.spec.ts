@@ -1,6 +1,6 @@
-const { expect } = require('@jest/globals');
-const { uuid } = require('../utils/testUtils');
-const { collectionSchema } = require('./index');
+import { expect } from '@jest/globals';
+import { uuid } from '../utils/testUtils';
+import { collectionSchema } from './index';
 
 describe('Collection Schema Validation', () => {
   it('collection schema must validate successfully - simple collection, no items', async () => {
@@ -136,7 +136,7 @@ describe('Collection Schema Validation', () => {
       ]
     };
 
-    expect(collectionSchema.validate(collection)).rejects.toThrow('items[0].request field has unspecified keys: params');
+    await expect(collectionSchema.validate(collection)).rejects.toThrow('items[0].request field has unspecified keys: params');
   });
 
 

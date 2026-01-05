@@ -1,6 +1,5 @@
-const { expect } = require('@jest/globals');
-const { uuid, validationErrorWithMessages } = require('../utils/testUtils');
-const { requestSchema } = require('./index');
+import { expect } from "@jest/globals";
+import { requestSchema } from './index';
 
 describe('Request Schema Validation', () => {
   it('request schema must validate successfully - simple request', async () => {
