@@ -2,18 +2,25 @@
   "name": "@usebruno/schema",
   "version": "0.7.0",
   "license": "MIT",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "files": [
+    "dist",
     "src",
     "package.json"
   ],
   "scripts": {
+    "clean": "rimraf dist",
+    "prebuild": "npm run clean",
+    "build": "tsc",
     "test": "jest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build"
   },
   "devDependencies": {
-    "@types/yup": "^0.29.14"
+    "@types/yup": "^0.29.14",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.8.3"
   },
   "peerDependencies": {
     "yup": "^0.32.11"
