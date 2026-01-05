@@ -1,6 +1,5 @@
-const { expect } = require('@jest/globals');
-const { uuid } = require('../utils/testUtils');
-const { collectionSchema } = require('./index');
+import { expect, uuid } from '../utils/testUtils';
+import { collectionSchema } from './index';
 
 describe('Collection Schema Validation', () => {
   it('collection schema must validate successfully - simple collection, no items', async () => {
@@ -136,7 +135,7 @@ describe('Collection Schema Validation', () => {
       ]
     };
 
-    expect(collectionSchema.validate(collection)).rejects.toThrow('items[0].request field has unspecified keys: params');
+    await expect(collectionSchema.validate(collection)).rejects.toThrow('items[0].request field has unspecified keys: params');
   });
 
 
@@ -144,7 +143,7 @@ describe('Collection Schema Validation', () => {
     const collection = {
       version: '1',
       uid: uuid(),
-      name: 'My Collection',
+      name: 'My collection',
       items: [
         {
           uid: uuid(),
@@ -169,7 +168,7 @@ describe('Collection Schema Validation', () => {
     const collection = {
       version: '1',
       uid: uuid(),
-      name: 'My Collection',
+      name: 'My collection',
       items: [
         {
           uid: uuid(),
@@ -178,7 +177,7 @@ describe('Collection Schema Validation', () => {
           items: [
             {
               uid: uuid(),
-              name: 'Get Countries',
+              name: 'Get countries',
               type: 'http-request',
               request: {
                 url: 'https://restcountries.com/v2/alpha/in',
@@ -192,7 +191,7 @@ describe('Collection Schema Validation', () => {
             },
             {
               uid: uuid(),
-              name: 'Second Level Folder',
+              name: 'Second level folder',
               type: 'folder'
             }
           ]

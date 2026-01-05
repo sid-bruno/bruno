@@ -1,22 +1,17 @@
-const { customAlphabet } = require('nanoid');
-const { expect } = require('@jest/globals');
+import { customAlphabet } from 'nanoid';
+import { expect } from '@jest/globals';
 
-// a customized version of nanoid without using _ and -
-const uuid = () => {
-  // https://github.com/ai/nanoid/blob/main/url-alphabet/index.js
-  const urlAlphabet = 'useandom26T198340PX75pxJACKVERYMINDBUSHWOLFGQZbfghjklqvwyzrict';
+const urlAlphabet = 'useandom26T198340PX75pxJACKVERYMINDBUSHWOLFGQZbfghjklqvwyzrict';
+
+export const uuid = (): string => {
   const customNanoId = customAlphabet(urlAlphabet, 21);
-
   return customNanoId();
 };
 
-const validationErrorWithMessages = (...errors) => {
+export const validationErrorWithMessages = (...errors: string[]): any => {
   return expect.objectContaining({
     errors
   });
 };
 
-module.exports = {
-  uuid,
-  validationErrorWithMessages
-};
+export { expect };
