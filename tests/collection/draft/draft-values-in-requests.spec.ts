@@ -3,8 +3,11 @@ import { createCollection, closeAllCollections } from '../../utils/page';
 
 test.describe('Draft values are used in requests', () => {
   test.afterEach(async ({ page }) => {
-    // cleanup: close all collections
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Verify draft collection headers are used in HTTP requests', async ({ page, createTmpDir }) => {

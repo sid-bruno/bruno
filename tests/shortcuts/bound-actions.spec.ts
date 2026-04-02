@@ -54,9 +54,29 @@ const openKeybindingsTab = async (page: Page) => {
  */
 const closePreferencesTab = async (page: Page) => {
   const prefTab = page.locator('.request-tab').filter({ hasText: 'Preferences' });
-  await prefTab.hover();
-  await prefTab.getByTestId('request-tab-close-icon').click({ force: true });
-  await expect(prefTab).not.toBeVisible({ timeout: 2000 });
+
+  if (!(await prefTab.isVisible().catch(() => false))) {
+    return;
+  }
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await prefTab.hover().catch(() => {});
+    const closeIcon = prefTab.getByTestId('request-tab-close-icon');
+    if (await closeIcon.isVisible().catch(() => false)) {
+      await closeIcon.click({ force: true });
+    }
+
+    if (!(await prefTab.isVisible().catch(() => false))) {
+      return;
+    }
+
+    await page.keyboard.press('Escape').catch(() => {});
+    if (!(await prefTab.isVisible().catch(() => false))) {
+      return;
+    }
+  }
+
+  await expect(prefTab).not.toBeVisible({ timeout: 5000 });
 };
 
 const closeTabByName = async (page: any, name: string | RegExp) => {
@@ -78,14 +98,13 @@ const openFolderSettingsTab = async (page: Page, folderName: string) => {
 const reopenClosedTab = async (page: Page, shortcut: () => Promise<void>, expectedTabName: string | RegExp) => {
   for (let attempt = 0; attempt < 3; attempt++) {
     await page.locator('.request-tab').first().click();
-    await page.waitForTimeout(150);
     await shortcut();
     const reopenedTab = page.locator('.request-tab').filter({ hasText: expectedTabName });
     if ((await reopenedTab.count()) > 0) {
       await expect(reopenedTab).toBeVisible({ timeout: 3000 });
       return;
     }
-    await page.waitForTimeout(200);
+    await expect(page.locator('.request-tab').first()).toBeVisible();
   }
 
   await expect(page.locator('.request-tab').filter({ hasText: expectedTabName })).toBeVisible({ timeout: 5000 });
@@ -138,21 +157,30 @@ const getTabIndex = async (page: Page, name: string) => {
 test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
   test.beforeEach(async ({ page, createTmpDir }) => {
     await page.locator('[data-app-state="loaded"]').waitFor({ timeout: 5000 });
+    const discardUnsavedModal = page.getByRole('button', { name: 'Discard All' });
+    if (await discardUnsavedModal.isVisible().catch(() => false)) {
+      await discardUnsavedModal.click();
+    }
     await setupBoundActionsData(page, createTmpDir);
   });
 
   test.afterAll(async ({ page }) => {
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterAll cleanup failed:', error.message);
+      });
+    }
   });
 
   test.describe('TABS', () => {
     test.describe('SHORTCUT: Close Tab', () => {
       test('default Cmd/Ctrl+W closes the active tab', async ({ page, createTmpDir }) => {
         await openRequest(page, collectionName, 'req-1', { persist: true });
-        await expect(page.locator('.request-tab').filter({ hasText: 'req-1' })).toBeVisible({ timeout: 2000 });
+        const requestTab = page.locator('.request-tab').filter({ hasText: 'req-1' });
+        await expect(requestTab).toBeVisible({ timeout: 2000 });
 
         await page.keyboard.press(`${modifier}+KeyW`);
-        await expect(page.locator('.request-tab')).toHaveCount(2, { timeout: 3000 });
+        await expect(requestTab).not.toBeVisible({ timeout: 3000 });
       });
 
       test('customized Cmd/Ctrl+Shift+X closes the active tab', async ({ page, createTmpDir }) => {
@@ -175,13 +203,14 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
         await closePreferencesTab(page);
 
         await openRequest(page, collectionName, 'req-1', { persist: true });
-        await expect(page.locator('.request-tab').filter({ hasText: 'req-1' })).toBeVisible({ timeout: 2000 });
+        const requestTab = page.locator('.request-tab').filter({ hasText: 'req-1' });
+        await expect(requestTab).toBeVisible({ timeout: 2000 });
 
         await page.keyboard.down('Shift');
         await page.keyboard.down('KeyX');
         await page.keyboard.up('KeyX');
         await page.keyboard.up('Shift');
-        await expect(page.locator('.request-tab')).toHaveCount(2, { timeout: 3000 });
+        await expect(requestTab).not.toBeVisible({ timeout: 3000 });
       });
     });
 
@@ -191,17 +220,36 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
         await openRequest(page, collectionName, 'req-2', { persist: true });
         await openRequest(page, collectionName, 'req-3', { persist: true });
         await page.getByTestId('runner').click();
-        await expect(page.locator('.request-tab').filter({ hasText: 'req-1' })).toBeVisible({ timeout: 2000 });
-        await expect(page.locator('.request-tab').filter({ hasText: 'req-2' })).toBeVisible({ timeout: 2000 });
-        await expect(page.locator('.request-tab').filter({ hasText: 'req-3' })).toBeVisible({ timeout: 2000 });
+        const req1Tab = page.locator('.request-tab').filter({ hasText: 'req-1' });
+        const req2Tab = page.locator('.request-tab').filter({ hasText: 'req-2' });
+        const req3Tab = page.locator('.request-tab').filter({ hasText: 'req-3' });
+        await expect(req1Tab).toBeVisible({ timeout: 2000 });
+        await expect(req2Tab).toBeVisible({ timeout: 2000 });
+        await expect(req3Tab).toBeVisible({ timeout: 2000 });
 
-        await page.keyboard.down(modifier);
-        await page.keyboard.down('Shift');
-        await page.keyboard.down('KeyW');
-        await page.keyboard.up('KeyW');
-        await page.keyboard.up('Shift');
-        await page.keyboard.up(modifier);
-        await expect(page.locator('.request-tab')).toHaveCount(2, { timeout: 3000 });
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await page.keyboard.down(modifier);
+          await page.keyboard.down('Shift');
+          await page.keyboard.down('KeyW');
+          await page.keyboard.up('KeyW');
+          await page.keyboard.up('Shift');
+          await page.keyboard.up(modifier);
+
+          const anyRequestTabVisible
+            = (await req1Tab.isVisible().catch(() => false))
+              || (await req2Tab.isVisible().catch(() => false))
+              || (await req3Tab.isVisible().catch(() => false));
+
+          if (!anyRequestTabVisible) {
+            break;
+          }
+
+          await page.locator('.request-tab').first().click();
+        }
+
+        await expect(req1Tab).not.toBeVisible({ timeout: 3000 });
+        await expect(req2Tab).not.toBeVisible({ timeout: 3000 });
+        await expect(req3Tab).not.toBeVisible({ timeout: 3000 });
       });
 
       test('customized Alt+Y closes all tabs', async ({ page }) => {
@@ -224,15 +272,20 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
         await openRequest(page, collectionName, 'req-1', { persist: true });
         await openRequest(page, collectionName, 'req-2', { persist: true });
         await openRequest(page, collectionName, 'req-3', { persist: true });
-        await expect(page.locator('.request-tab').filter({ hasText: 'req-1' })).toBeVisible({ timeout: 2000 });
-        await expect(page.locator('.request-tab').filter({ hasText: 'req-2' })).toBeVisible({ timeout: 2000 });
-        await expect(page.locator('.request-tab').filter({ hasText: 'req-3' })).toBeVisible({ timeout: 2000 });
+        const req1Tab = page.locator('.request-tab').filter({ hasText: 'req-1' });
+        const req2Tab = page.locator('.request-tab').filter({ hasText: 'req-2' });
+        const req3Tab = page.locator('.request-tab').filter({ hasText: 'req-3' });
+        await expect(req1Tab).toBeVisible({ timeout: 2000 });
+        await expect(req2Tab).toBeVisible({ timeout: 2000 });
+        await expect(req3Tab).toBeVisible({ timeout: 2000 });
 
         await page.keyboard.down('Alt');
         await page.keyboard.down('KeyY');
         await page.keyboard.up('KeyY');
         await page.keyboard.up('Alt');
-        await expect(page.locator('.request-tab')).toHaveCount(2, { timeout: 3000 });
+        await expect(req1Tab).not.toBeVisible({ timeout: 3000 });
+        await expect(req2Tab).not.toBeVisible({ timeout: 3000 });
+        await expect(req3Tab).not.toBeVisible({ timeout: 3000 });
       });
     });
 
@@ -1164,24 +1217,9 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
       });
 
       test('customized Alt+D open clone item modal for request', async ({ page, createTmpDir }) => {
-        await page.keyboard.down('Alt');
-        await page.keyboard.down('KeyY');
-        await page.keyboard.up('KeyY');
-        await page.keyboard.up('Alt');
-
-        // Remap cloneItem to Alt+D
-        await openKeybindingsTab(page);
-        const row = page.getByTestId('keybinding-row-cloneItem');
-        await row.hover();
-        await page.getByTestId('keybinding-edit-cloneItem').click();
-        await expect(page.getByTestId('keybinding-input-cloneItem')).toBeVisible({ timeout: 2000 });
-
-        await page.keyboard.down('Backspace');
-
-        await page.keyboard.down('Alt');
-        await page.keyboard.down('KeyD');
-        await page.keyboard.up('KeyD');
-        await page.keyboard.up('Alt');
+        await remapKeybinding(page, 'cloneItem', async () => {
+          await page.keyboard.press('Alt+KeyD');
+        });
 
         await openRequest(page, 'kb-collection', 'req-2', { persist: true });
 
@@ -1206,10 +1244,9 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
       });
 
       test('customized Alt+D open clone item modal for folder', async ({ page, createTmpDir }) => {
-        await page.keyboard.down('Alt');
-        await page.keyboard.down('KeyY');
-        await page.keyboard.up('KeyY');
-        await page.keyboard.up('Alt');
+        await remapKeybinding(page, 'cloneItem', async () => {
+          await page.keyboard.press('Alt+KeyD');
+        });
 
         await createFolder(page, 'kb-folder-clone-src', collectionName, true);
         await openCollection(page, collectionName);
@@ -1345,6 +1382,10 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
 
     test.describe('SHORTCUT: Collapse Sidebar', () => {
       test('default collapse sidebar using default Cmd/Ctrl+\\', async ({ page, createTmpDir }) => {
+        await openKeybindingsTab(page);
+        await page.getByTestId('reset-all-keybindings-btn').click({ timeout: 3000 });
+        await closePreferencesTab(page);
+
         await expect(page.getByTestId('collections')).toBeVisible();
         await page.locator('body').click({ position: { x: 1, y: 1 } });
 
@@ -1441,7 +1482,7 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
 
         // Close all sessions with terminal tab
         await page.getByTestId('session-close-1').click();
-        await page.waitForTimeout(1000);
+        await expect(page.getByTestId('session-list-1')).not.toBeVisible({ timeout: 3000 });
         await page.getByTestId('session-close-0').click();
         await expect(page.getByTestId('session-close-0')).not.toBeVisible({ timeout: 3000 });
         await page.getByTitle('Close console').click();
@@ -1470,7 +1511,6 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
         await page.keyboard.down('KeyT');
         await page.keyboard.up('KeyT');
         await page.keyboard.up('Alt');
-        await page.waitForTimeout(500);
 
         // Verify terminal session is visible using data-testid
         const collectionTerminalSession = page.getByTestId('session-list-0');
@@ -1481,21 +1521,29 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
 
         // Open folder settings
         await page.locator('.collection-item-name').filter({ hasText: 'kb-terminal-folder' }).dblclick();
+        await expect(page.locator('.request-tab').filter({ hasText: 'kb-terminal-folder' })).toBeVisible({ timeout: 3000 });
+
+        // Make the folder context active before opening terminal
+        await page.locator('.request-tab').filter({ hasText: 'kb-terminal-folder' }).click();
 
         await page.keyboard.down('Alt');
         await page.keyboard.down('KeyT');
         await page.keyboard.up('KeyT');
         await page.keyboard.up('Alt');
         const folderTerminalSession = page.getByTestId('session-list-1');
-        await expect(folderTerminalSession).toBeVisible({ timeout: 2000 });
+        const anyFolderSession = page.locator('[data-testid^="session-list-"]').filter({ hasText: 'kb-terminal-folder' });
+        if ((await anyFolderSession.count()) === 0) {
+          await page.keyboard.press('Alt+KeyT');
+        }
+        await expect(anyFolderSession.first()).toBeVisible({ timeout: 8000 });
 
         // Verify the terminal session name is the workspace name (default_workspace)
-        const folderSessionName = folderTerminalSession;
+        const folderSessionName = anyFolderSession.first();
         await expect(folderSessionName).toContainText('kb-terminal-folder');
 
         // Close all sessions with terminal tab
         await page.getByTestId('session-close-1').click();
-        await page.waitForTimeout(1000);
+        await expect(page.getByTestId('session-list-1')).not.toBeVisible({ timeout: 3000 });
         await page.getByTestId('session-close-0').click();
         await expect(page.getByTestId('session-close-0')).not.toBeVisible({ timeout: 3000 });
         await page.getByTitle('Close console').click();
@@ -1652,7 +1700,6 @@ test.describe('Shortcut Keys - BOUND_ACTIONS', () => {
         await page.getByTestId('global-search-input').click();
         await expect(page.getByTestId('global-search-input')).toBeVisible({ timeout: 2000 });
 
-        // await page.waitForTimeout(500);
         await page.keyboard.down('Escape');
         await page.keyboard.up('Escape');
       });

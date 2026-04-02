@@ -21,8 +21,11 @@ const restartAppAndGetLocators = async (restartApp: (options?: { initUserDataPat
 // The "Remove from workspace" flow is different from the old "Close collection" flow
 test.describe.skip('Close All Collections', () => {
   test.afterAll(async () => {
-    // Reset the request file to the original state after saving changes
-    execSync(`git checkout -- "${path.join(__dirname, 'fixtures', 'collections', 'collection 1', 'test-request.bru')}"`);
+    try {
+      execSync(`git checkout -- "${path.join(__dirname, 'fixtures', 'collections', 'collection 1', 'test-request.bru')}"`);
+    } catch (error) {
+      console.warn('afterAll cleanup failed:', (error as Error).message);
+    }
   });
 
   test('should show/hide close all icon based on hover state', async ({ pageWithUserData: page }) => {

@@ -51,7 +51,21 @@ const closeAllCollections = async (page) => {
  */
 const openCollection = async (page, collectionName: string) => {
   await test.step(`Open collection "${collectionName}"`, async () => {
-    await page.locator('#sidebar-collection-name').filter({ hasText: collectionName }).click();
+    const collection = page.locator('#sidebar-collection-name').filter({ hasText: collectionName }).first();
+    await expect(page.getByTestId('collections')).toBeVisible({ timeout: 10000 });
+    await expect(collection).toBeVisible({ timeout: 10000 });
+    await collection.scrollIntoViewIfNeeded();
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await collection.click({ timeout: 5000 });
+        return;
+      } catch (error) {
+        if (attempt === 2) {
+          throw error;
+        }
+      }
+    }
   });
 };
 
@@ -91,7 +105,6 @@ const createCollection = async (page, collectionName: string, collectionLocation
     await createCollectionModal.getByRole('button', { name: 'Create', exact: true }).click();
 
     await createCollectionModal.waitFor({ state: 'detached', timeout: 15000 });
-    await page.waitForTimeout(200);
     await openCollection(page, collectionName);
   });
 };
@@ -121,7 +134,7 @@ const createUntitledRequest = async (
   page: Page,
   options: CreateUntitledRequestOptions = {}
 ) => {
-  const { requestType = 'HTTP', url, tag } = options;
+  const { requestType = 'HTTP', requestName, url, tag } = options;
 
   await test.step(`Create untitled ${requestType} request${url ? ' with URL' : ''}${tag ? ' with tag' : ''}`, async () => {
     // Click the + icon to open the dropdown
@@ -134,29 +147,29 @@ const createUntitledRequest = async (
     await page.locator('.tippy-box .dropdown-item').filter({ hasText: requestType }).click();
 
     // Wait for the request tab to be active
-    await page.locator('.request-tab.active').waitFor({ state: 'visible' });
-    await page.waitForTimeout(300);
+    const activeTab = page.locator('.request-tab.active');
+    await activeTab.waitFor({ state: 'visible' });
+    await expect(activeTab).toContainText(requestName || 'Untitled');
 
     // Fill URL if provided
     if (url) {
       await page.locator('#request-url .CodeMirror').click();
       await page.locator('#request-url textarea').fill(url);
       await page.locator('#send-request').getByTitle('Save Request').click();
-      await page.waitForTimeout(200);
+      await expect(page.getByText('Request saved successfully').last()).toBeVisible({ timeout: 3000 });
     }
 
     // Add tag if provided
     if (tag) {
       await selectRequestPaneTab(page, 'Settings');
-      await page.waitForTimeout(200);
       const tagInput = await page.getByTestId('tag-input').getByRole('textbox');
+      await expect(tagInput).toBeVisible();
       await tagInput.fill(tag);
       await tagInput.press('Enter');
-      await page.waitForTimeout(200);
       await expect(page.locator('.tag-item', { hasText: tag })).toBeVisible();
       const saveShortcut = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
       await page.keyboard.press(saveShortcut);
-      await page.waitForTimeout(200);
+      await expect(page.getByText('Request saved successfully').last()).toBeVisible({ timeout: 3000 });
     }
 
     // Wait for toast message to ensure request creation is complete
@@ -202,9 +215,9 @@ const createTransientRequest = async (
     await page.locator('.dropdown-item').filter({ hasText: requestType }).click();
 
     // Wait for the request tab to be active (transient requests show as "Untitled X")
-    await page.locator('.request-tab.active').waitFor({ state: 'visible' });
-    await expect(page.locator('.request-tab.active')).toContainText('Untitled');
-    await page.waitForTimeout(300);
+    const activeTab = page.locator('.request-tab.active');
+    await activeTab.waitFor({ state: 'visible' });
+    await expect(activeTab).toContainText('Untitled');
   });
 };
 
@@ -217,24 +230,16 @@ const createTransientRequest = async (
  */
 const fillRequestUrl = async (page: Page, url: string) => {
   await test.step(`Fill request URL: ${url}`, async () => {
-    // HTTP/GraphQL requests use #request-url
-    // gRPC/WebSocket don't have a specific ID, so we need to find the CodeMirror in the active request pane
-    const httpGraphqlUrl = page.locator('#request-url .CodeMirror');
-    const grpcWsUrl = page.locator('.input-container .CodeMirror').first();
+    const httpGraphqlTextarea = page.locator('#request-url textarea:visible').first();
+    const genericTextarea = page.locator('.input-container textarea:visible').first();
 
-    // Try HTTP/GraphQL selector first
-    const isHttpOrGraphql = await httpGraphqlUrl.isVisible().catch(() => false);
-
-    if (isHttpOrGraphql) {
-      await httpGraphqlUrl.click();
-      await page.locator('#request-url textarea').fill(url);
-    } else {
-      // Fall back to generic selector for gRPC/WebSocket
-      await grpcWsUrl.click();
-      await page.locator('.input-container textarea').first().fill(url);
+    if (await httpGraphqlTextarea.isVisible().catch(() => false)) {
+      await httpGraphqlTextarea.fill(url);
+      return;
     }
 
-    await page.waitForTimeout(200);
+    await expect(genericTextarea).toBeVisible();
+    await genericTextarea.fill(url);
   });
 };
 
@@ -281,7 +286,7 @@ const createRequest = async (
         await page.locator('.bruno-modal .method-selector input').fill(method);
         await page.keyboard.press('Enter');
       }
-      await page.waitForTimeout(200);
+      await expect(page.locator('.bruno-modal .method-selector')).toContainText(method);
     }
 
     if (url) {
@@ -547,7 +552,7 @@ const createEnvironment = async (
     await expect(page.locator('.request-tab').filter({ hasText: tabLabel })).toBeVisible();
 
     const locators = buildCommonLocators(page);
-    await page.waitForTimeout(200); // @TODO replace with dynamic waiting logic
+    await expect(locators.environment.selector()).toBeVisible();
     await locators.environment.selector().click();
     if (type === 'global') {
       await locators.environment.globalTab().click();
@@ -872,17 +877,29 @@ const buttonToMenuItemMap: Record<string, string> = {
 // Click a response action - handles both visible buttons and menu items
 const clickResponseAction = async (page: Page, actionTestId: string) => {
   const actionButton = page.getByTestId(actionTestId).first();
-  if (await actionButton.isVisible()) {
+  if (await actionButton.isVisible().catch(() => false)) {
     await actionButton.click();
   } else {
     // Open the menu dropdown
     const menu = page.getByTestId('response-actions-menu');
-    await menu.click();
+    await expect(menu).toBeVisible({ timeout: 5000 });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await menu.click({ timeout: 3000 });
+        break;
+      } catch (error) {
+        if (attempt === 2) {
+          throw error;
+        }
+      }
+    }
 
     // Click the corresponding menu item
     const menuItemId = buttonToMenuItemMap[actionTestId];
     if (menuItemId) {
-      await page.locator(`[role="menuitem"][data-item-id="${menuItemId}"]`).click();
+      const menuItem = page.locator(`[role="menuitem"][data-item-id="${menuItemId}"]`);
+      await expect(menuItem).toBeVisible({ timeout: 5000 });
+      await menuItem.click();
     } else {
       throw new Error(`Unknown action testId: ${actionTestId}. Add mapping to buttonToMenuItemMap.`);
     }
@@ -1022,8 +1039,9 @@ const saveRequest = async (page: Page) => {
   await test.step('Save request', async () => {
     const saveShortcut = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
     await page.keyboard.press(saveShortcut);
-    await expect(page.getByText('Request saved successfully').last()).toBeVisible({ timeout: 3000 });
-    await page.waitForTimeout(200);
+    const saveToast = page.getByText('Request saved successfully').last();
+    await expect(saveToast).toBeVisible({ timeout: 3000 });
+    await saveToast.waitFor({ state: 'hidden', timeout: 10000 });
   });
 };
 

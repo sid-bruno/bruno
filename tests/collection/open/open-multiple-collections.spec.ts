@@ -14,10 +14,13 @@ test.describe('Open Multiple Collections', () => {
   });
 
   test.afterAll(async ({ electronApp }) => {
-    // restore the original showOpenDialog function
-    await electronApp.evaluate(({ dialog }) => {
-      dialog.showOpenDialog = originalShowOpenDialog;
-    });
+    try {
+      await electronApp.evaluate(({ dialog }) => {
+        dialog.showOpenDialog = originalShowOpenDialog;
+      });
+    } catch (error) {
+      console.warn('afterAll cleanup failed:', (error as Error).message);
+    }
   });
 
   test('Should open multiple collections using Open Collection feature', async ({
@@ -94,9 +97,6 @@ test.describe('Open Multiple Collections', () => {
 
     await page.getByTestId('collections-header-add-menu').click();
     await page.locator('.tippy-box .dropdown-item').filter({ hasText: 'Open collection' }).click();
-
-    // Wait for error toasts to appear
-    await page.waitForTimeout(1000);
 
     // Verify no collections were opened
     await expect(page.locator('#sidebar-collection-name')).toHaveCount(collectionCountBefore);

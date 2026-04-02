@@ -4,7 +4,11 @@ import { createCollection, createFolder, closeAllCollections } from '../../utils
 
 test.describe('Folder docs sticky edit/preview button', () => {
   test.afterEach(async ({ page }) => {
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
+    }
   });
 
   test('edit/preview button should remain visible when scrolling folder docs', async ({ page, createTmpDir }) => {

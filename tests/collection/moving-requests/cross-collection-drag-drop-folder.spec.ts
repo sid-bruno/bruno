@@ -3,8 +3,11 @@ import { closeAllCollections, createCollection } from '../../utils/page';
 
 test.describe('Cross-Collection Drag and Drop for folder', () => {
   test.afterEach(async ({ page }) => {
-    // cleanup: close all collections
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Verify cross-collection folder drag and drop', async ({ page, createTmpDir }) => {
@@ -23,8 +26,6 @@ test.describe('Cross-Collection Drag and Drop for folder', () => {
     await page.locator('#folder-name').fill('test-folder');
     await page.getByRole('button', { name: 'Create' }).click();
 
-    // Wait for the folder to be created and appear in the sidebar
-    await page.waitForTimeout(200);
     await expect(page.locator('.collection-item-name').filter({ hasText: 'test-folder' })).toBeVisible();
 
     // Add a request to the folder to make it more realistic
@@ -36,12 +37,8 @@ test.describe('Cross-Collection Drag and Drop for folder', () => {
     await page.locator('textarea').fill('https://echo.usebruno.com');
     await page.getByRole('button', { name: 'Create' }).click();
 
-    // Wait for the request to be created
-    await page.waitForTimeout(200);
-
     // Expand the folder to see the request inside
     await page.locator('.collection-item-name').filter({ hasText: 'test-folder' }).click();
-    await page.waitForTimeout(200);
     await expect(page.locator('.collection-item-name').filter({ hasText: 'test-request-in-folder' })).toBeVisible();
 
     // Create second collection - open with sandbox mode
@@ -62,9 +59,6 @@ test.describe('Cross-Collection Drag and Drop for folder', () => {
     // Perform drag and drop operation
     await sourceFolder.dragTo(targetCollection);
 
-    // Wait for the operation to complete
-    await page.waitForTimeout(200);
-
     // Verify the folder has been moved to the target collection
     // Check that the folder now appears under target collection
     const targetCollectionContainer = page
@@ -77,7 +71,6 @@ test.describe('Cross-Collection Drag and Drop for folder', () => {
 
     // Expand the moved folder to verify the request inside is also moved
     await targetCollectionContainer.locator('.collection-item-name').filter({ hasText: 'test-folder' }).click();
-    await page.waitForTimeout(200);
     await expect(
       targetCollectionContainer.locator('.collection-item-name').filter({ hasText: 'test-request-in-folder' })
     ).toBeVisible();

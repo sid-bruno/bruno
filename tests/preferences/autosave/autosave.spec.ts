@@ -9,7 +9,9 @@ test.describe('Autosave', () => {
   test.afterEach(async ({ page }) => {
     // Only try to cleanup if page is still open
     if (!page.isClosed()) {
-      await closeAllCollections(page);
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
     }
   });
 
@@ -39,7 +41,7 @@ test.describe('Autosave', () => {
       await page.locator('.status-bar button[data-trigger="preferences"]').click();
 
       // Wait for preferences tab to be visible
-      await page.waitForTimeout(500);
+      await expect(page.locator('.request-tab').filter({ hasText: 'Preferences' })).toBeVisible();
 
       // Navigate to General tab (should be default, but ensure it)
       await page.getByRole('tab', { name: 'General' }).click();
@@ -49,7 +51,7 @@ test.describe('Autosave', () => {
       await autoSaveCheckbox.check();
 
       // Wait for auto-save to complete (debounce is 500ms)
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1000); // debounce: preferences-save IPC
 
       // Close preferences tab using the close icon
       const preferencesTab = page.locator('.request-tab').filter({ hasText: 'Preferences' });
@@ -95,7 +97,7 @@ test.describe('Autosave', () => {
       await page.locator('.status-bar button[data-trigger="preferences"]').click();
 
       // Wait for preferences tab to be visible
-      await page.waitForTimeout(500);
+      await expect(page.locator('.request-tab').filter({ hasText: 'Preferences' })).toBeVisible();
 
       // Navigate to General tab
       await page.getByRole('tab', { name: 'General' }).click();
@@ -105,7 +107,7 @@ test.describe('Autosave', () => {
       await autoSaveCheckbox.uncheck();
 
       // Wait for auto-save to complete (debounce is 500ms)
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1000); // debounce: preferences-save IPC
 
       // Close preferences tab using the close icon
       const preferencesTab = page.locator('.request-tab').filter({ hasText: 'Preferences' });
@@ -179,7 +181,7 @@ test.describe('Autosave', () => {
       await page.locator('.status-bar button[data-trigger="preferences"]').click();
 
       // Wait for preferences tab to be visible
-      await page.waitForTimeout(500);
+      await expect(page.locator('.request-tab').filter({ hasText: 'Preferences' })).toBeVisible();
 
       // Navigate to General tab
       await page.getByRole('tab', { name: 'General' }).click();
@@ -189,7 +191,7 @@ test.describe('Autosave', () => {
       await autoSaveCheckbox.check();
 
       // Wait for auto-save to complete (debounce is 500ms)
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1000); // debounce: preferences-save IPC
 
       // Close preferences tab using the close icon
       const preferencesTab = page.locator('.request-tab').filter({ hasText: 'Preferences' });
@@ -198,8 +200,6 @@ test.describe('Autosave', () => {
 
       // Click on the request to make it active again
       await page.locator('.collection-item-name').filter({ hasText: 'Draft Request' }).click();
-
-      await page.waitForTimeout(1000);
 
       const requestTab = page.locator('.request-tab').filter({ has: page.locator('.tab-label', { hasText: 'Draft Request' }) });
       await expect(requestTab.locator('.has-changes-icon')).not.toBeVisible({ timeout: 10000 });

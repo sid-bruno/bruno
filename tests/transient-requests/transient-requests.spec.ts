@@ -1,5 +1,5 @@
 import { test, expect } from '../../playwright';
-import { createTransientRequest, fillRequestUrl, closeAllCollections, createCollection, sendRequest, clickResponseAction, selectRequestPaneTab } from '../utils/page';
+import { createTransientRequest, fillRequestUrl, closeAllCollections, createCollection, clickResponseAction, closeAllTabs } from '../utils/page';
 import { buildCommonLocators, buildWebsocketCommonLocators } from '../utils/page/locators';
 
 const saveShortcut = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
@@ -9,6 +9,7 @@ test.describe.serial('Transient Requests', () => {
 
   test.beforeAll(async ({ page, createTmpDir }) => {
     locators = buildCommonLocators(page);
+    await page.locator('[data-app-state="loaded"]').waitFor({ timeout: 30000 });
 
     // Create a temporary collection
     const collectionPath = await createTmpDir('transient-collection');
@@ -22,8 +23,11 @@ test.describe.serial('Transient Requests', () => {
   });
 
   test.afterAll(async ({ page }) => {
-    // Clean up all collections
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterAll cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Create transient HTTP request - should not appear in sidebar', async ({ page }) => {
@@ -43,7 +47,6 @@ test.describe.serial('Transient Requests', () => {
     await test.step('Verify request is NOT in sidebar', async () => {
       // Click on the collection to ensure it's expanded
       await locators.sidebar.collection('transient-requests-test').click();
-      await page.waitForTimeout(300);
 
       // Check that there are no requests in the collection
       // Transient requests should not appear in the sidebar
@@ -126,11 +129,11 @@ test.describe.serial('Transient Requests', () => {
     await test.step('Trigger save action using keyboard shortcut', async () => {
       // Try to save using Cmd+S (Mac) or Ctrl+S (other platforms)
       await page.keyboard.press(saveShortcut);
-      await page.waitForTimeout(500);
+      const saveModal = page.locator('.bruno-modal-card').filter({ hasText: 'Save Request' });
+      await expect(saveModal).toBeVisible({ timeout: 5000 });
     });
 
     await test.step('Fill in save dialog', async () => {
-      // Wait for save modal to appear
       const saveModal = page.locator('.bruno-modal-card').filter({ hasText: 'Save Request' });
       await expect(saveModal).toBeVisible({ timeout: 5000 });
 
@@ -142,8 +145,7 @@ test.describe.serial('Transient Requests', () => {
       // Click Save button
       await saveModal.getByRole('button', { name: 'Save' }).click();
 
-      // Wait for success toast
-      await page.waitForTimeout(1000);
+      await expect(page.getByText('Request saved')).toBeVisible({ timeout: 5000 });
     });
 
     await test.step('Verify saved request appears in sidebar', async () => {
@@ -174,7 +176,8 @@ test.describe.serial('Transient Requests', () => {
 
     await test.step('Trigger save action using keyboard shortcut', async () => {
       await page.keyboard.press(saveShortcut);
-      await page.waitForTimeout(500);
+      const saveModal = page.locator('.bruno-modal-card').filter({ hasText: 'Save Request' });
+      await expect(saveModal).toBeVisible({ timeout: 5000 });
     });
 
     await test.step('Fill in save dialog', async () => {
@@ -186,7 +189,7 @@ test.describe.serial('Transient Requests', () => {
       await requestNameInput.fill('Saved GraphQL Request');
 
       await saveModal.getByRole('button', { name: 'Save' }).click();
-      await page.waitForTimeout(1000);
+      await expect(page.getByText('Request saved successfully').last()).toBeVisible({ timeout: 5000 });
     });
 
     await test.step('Verify saved request appears in sidebar', async () => {
@@ -205,6 +208,8 @@ test.describe.serial('Transient Requests', () => {
   });
 
   test('Send transient HTTP request - verify response', async ({ page }) => {
+    test.slow();
+    await closeAllTabs(page);
     await test.step('Create transient HTTP request', async () => {
       await createTransientRequest(page, {
         requestType: 'HTTP'
@@ -213,8 +218,16 @@ test.describe.serial('Transient Requests', () => {
     });
 
     await test.step('Send request and verify response', async () => {
-      // Send request using the helper function
-      await sendRequest(page, 200);
+      const methodSelector = page.getByTestId('method-selector');
+      await expect(methodSelector).toBeVisible({ timeout: 5000 });
+      if (!(await methodSelector.innerText()).includes('GET')) {
+        await methodSelector.click();
+        await page.locator('.dropdown-item').filter({ hasText: 'GET' }).first().click();
+        await expect(methodSelector).toContainText('GET');
+      }
+
+      await page.getByTestId('send-arrow-icon').click();
+      await expect(page.getByTestId('response-status-code')).toContainText('200', { timeout: 30000 });
 
       // Copy response to clipboard and verify
       await clickResponseAction(page, 'response-copy-btn');

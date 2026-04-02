@@ -13,11 +13,14 @@ test.describe.serial('Scratch Requests', () => {
   });
 
   test.afterAll(async ({ page }) => {
-    // Close all tabs (including scratch requests) to avoid "unsaved changes" modal
-    await closeAllTabs(page);
-
-    // Clean up any regular collections
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllTabs(page).catch((error: Error) => {
+        console.warn('afterAll cleanup failed:', error.message);
+      });
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterAll cleanup failed:', error.message);
+      });
+    }
   });
 
   /**
@@ -41,7 +44,6 @@ test.describe.serial('Scratch Requests', () => {
       // Wait for the request tab to be active
       await page.locator('.request-tab.active').waitFor({ state: 'visible' });
       await expect(page.locator('.request-tab.active')).toContainText('Untitled');
-      await page.waitForTimeout(300);
     });
   };
 
@@ -53,7 +55,7 @@ test.describe.serial('Scratch Requests', () => {
       // Click the home icon in the title bar to go to workspace overview
       const homeButton = page.locator('.titlebar-left .home-button');
       await homeButton.click();
-      await page.waitForTimeout(300);
+      await expect(page.locator('.request-tab').filter({ hasText: 'Overview' })).toBeVisible({ timeout: 5000 });
     });
   };
 

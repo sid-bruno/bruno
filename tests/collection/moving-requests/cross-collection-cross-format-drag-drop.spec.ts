@@ -5,7 +5,11 @@ import * as fs from 'fs';
 
 test.describe('Cross-Format Collection Drag and Drop', () => {
   test.afterEach(async ({ pageWithUserData: page }) => {
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Cross-format drag and drop should convert request between bru and yml', async ({

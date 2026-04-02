@@ -6,7 +6,11 @@ import { buildCommonLocators } from '../../utils/page/locators';
 
 test.describe('Default ignores for node_modules and .git', () => {
   test.afterEach(async ({ page }) => {
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Should always ignore node_modules even when user has custom ignore config', async ({

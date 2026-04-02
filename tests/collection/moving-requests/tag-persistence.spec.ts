@@ -4,8 +4,11 @@ import { buildCommonLocators } from '../../utils/page/locators';
 
 test.describe('Tag persistence', () => {
   test.afterEach(async ({ page }) => {
-    // cleanup: close all collections
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Verify tag persistence while moving requests within a collection', async ({ page, createTmpDir }) => {
@@ -63,7 +66,6 @@ test.describe('Tag persistence', () => {
     // Create a new folder
     await locators.sidebar.collectionRow('test-collection').hover();
     await locators.actions.collectionActions('test-collection').click();
-    await page.waitForTimeout(1);
     await locators.dropdown.item('New Folder').click();
     await page.locator('#folder-name').fill('folder-1');
     await locators.modal.button('Create').click();

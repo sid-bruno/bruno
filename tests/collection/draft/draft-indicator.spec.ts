@@ -3,8 +3,11 @@ import { closeAllCollections, createCollection } from '../../utils/page';
 
 test.describe('Draft indicator in collection and folder settings', () => {
   test.afterAll(async ({ page }) => {
-    // cleanup: close all collections
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterAll cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Verify draft indicator appears when changing collection settings - Headers', async ({ page, createTmpDir }) => {

@@ -3,8 +3,11 @@ import { closeAllCollections, createCollection, createRequest } from '../../util
 
 test.describe('Cross-Collection Drag and Drop', () => {
   test.afterEach(async ({ page }) => {
-    // cleanup: close all collections
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Verify request drag and drop', async ({ page, createTmpDir }) => {

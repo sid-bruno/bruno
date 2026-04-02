@@ -3,8 +3,11 @@ import { closeAllCollections, createCollection, createRequest } from '../../util
 
 test.describe('Create collection', () => {
   test.afterEach(async ({ page }) => {
-    // cleanup: close all collections
-    await closeAllCollections(page);
+    if (!page.isClosed()) {
+      await closeAllCollections(page).catch((error: Error) => {
+        console.warn('afterEach cleanup failed:', error.message);
+      });
+    }
   });
 
   test('Create collection and add a simple HTTP request', async ({ page, createTmpDir }) => {
