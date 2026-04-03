@@ -487,16 +487,32 @@ const createFolder = async (
     const locators = buildCommonLocators(page);
 
     if (isCollection) {
-      await locators.sidebar.collection(parentName).hover();
+      const parentCollection = locators.sidebar.collection(parentName).first();
+      await expect(parentCollection).toBeVisible({ timeout: 10000 });
+      await parentCollection.hover();
+      await expect(locators.actions.collectionActions(parentName)).toBeVisible({ timeout: 5000 });
       await locators.actions.collectionActions(parentName).click();
     } else {
-      await locators.sidebar.folder(parentName).hover();
+      const parentFolder = locators.sidebar.folder(parentName).first();
+      await expect(parentFolder).toBeVisible({ timeout: 10000 });
+      await parentFolder.hover();
+      await expect(locators.actions.collectionItemActions(parentName)).toBeVisible({ timeout: 5000 });
       await locators.actions.collectionItemActions(parentName).click();
     }
 
-    await locators.dropdown.item('New Folder').click();
-    await page.getByTestId('new-folder-input').fill(folderName);
-    await locators.modal.button('Create').click();
+    const newFolderItem = locators.dropdown.item('New Folder').first();
+    await expect(newFolderItem).toBeVisible({ timeout: 5000 });
+    await newFolderItem.click();
+
+    const newFolderInput = page.getByTestId('new-folder-input');
+    await expect(newFolderInput).toBeVisible({ timeout: 5000 });
+    await newFolderInput.fill(folderName);
+
+    const newFolderModal = page.locator('.bruno-modal').filter({ has: newFolderInput });
+    const createButton = newFolderModal.getByRole('button', { name: 'Create', exact: true });
+    await expect(createButton).toBeVisible({ timeout: 5000 });
+    await createButton.click();
+
     await expect(locators.sidebar.folder(folderName)).toBeVisible();
   });
 };
@@ -876,17 +892,19 @@ const buttonToMenuItemMap: Record<string, string> = {
 
 // Click a response action - handles both visible buttons and menu items
 const clickResponseAction = async (page: Page, actionTestId: string) => {
-  const actionButton = page.getByTestId(actionTestId).first();
-  if (await actionButton.isVisible().catch(() => false)) {
-    await actionButton.click();
-  } else {
-    // Open the menu dropdown
-    const menu = page.getByTestId('response-actions-menu');
-    await expect(menu).toBeVisible({ timeout: 5000 });
-    for (let attempt = 0; attempt < 3; attempt++) {
+  const menuItemId = buttonToMenuItemMap[actionTestId];
+  if (!menuItemId) {
+    throw new Error(`Unknown action testId: ${actionTestId}. Add mapping to buttonToMenuItemMap.`);
+  }
+
+  await expect(page.getByTestId('response-pane')).toBeVisible({ timeout: 5000 });
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const actionButton = page.getByTestId(actionTestId).first();
+    if (await actionButton.isVisible().catch(() => false)) {
       try {
-        await menu.click({ timeout: 3000 });
-        break;
+        await actionButton.click({ timeout: 3000 });
+        return;
       } catch (error) {
         if (attempt === 2) {
           throw error;
@@ -894,14 +912,20 @@ const clickResponseAction = async (page: Page, actionTestId: string) => {
       }
     }
 
-    // Click the corresponding menu item
-    const menuItemId = buttonToMenuItemMap[actionTestId];
-    if (menuItemId) {
-      const menuItem = page.locator(`[role="menuitem"][data-item-id="${menuItemId}"]`);
-      await expect(menuItem).toBeVisible({ timeout: 5000 });
-      await menuItem.click();
-    } else {
-      throw new Error(`Unknown action testId: ${actionTestId}. Add mapping to buttonToMenuItemMap.`);
+    try {
+      const menu = page.getByTestId('response-actions-menu').first();
+      await menu.waitFor({ state: 'visible', timeout: 5000 });
+      await menu.click({ timeout: 3000 });
+
+      const menuItem = page.locator(`[role="menuitem"][data-item-id="${menuItemId}"]`).first();
+      await menuItem.waitFor({ state: 'visible', timeout: 5000 });
+      await menuItem.click({ timeout: 3000 });
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        throw error;
+      }
+      await page.keyboard.press('Escape').catch(() => {});
     }
   }
 };
