@@ -1,18 +1,42 @@
 import { createSelector } from '@reduxjs/toolkit';
 
+const isPathMatchableTab = (tab) => tab.type !== 'response-example';
+
+const isTabInCollectionScope = (tab, collectionUid) => {
+  if (!collectionUid) {
+    return true;
+  }
+
+  return tab.collectionUid === collectionUid;
+};
+
+const isUidMatch = (tab, itemUid) => tab.uid === itemUid;
+
+const isPathnameMatch = (tab, itemPathname) => {
+  if (!itemPathname || !isPathMatchableTab(tab)) {
+    return false;
+  }
+
+  return tab.pathname === itemPathname;
+};
+
+const isTabMatchForItem = (tab, { itemUid, itemPathname, collectionUid }) => {
+  if (!isTabInCollectionScope(tab, collectionUid)) {
+    return false;
+  }
+
+  return isUidMatch(tab, itemUid) || isPathnameMatch(tab, itemPathname);
+};
+
 export const getTabUidForItem = ({ itemUid, itemPathname, collectionUid }) => createSelector([
   (state) => state.tabs.tabs
 ], (tabs) => {
-  const tabByUid = tabs.find((tab) => tab.uid === itemUid && (!collectionUid || tab.collectionUid === collectionUid));
+  const tabByUid = tabs.find((tab) => isTabInCollectionScope(tab, collectionUid) && isUidMatch(tab, itemUid));
   if (tabByUid) {
     return tabByUid.uid;
   }
 
-  if (!itemPathname) {
-    return null;
-  }
-
-  const tabByPathname = tabs.find((tab) => tab.pathname === itemPathname && (!collectionUid || tab.collectionUid === collectionUid));
+  const tabByPathname = tabs.find((tab) => isTabInCollectionScope(tab, collectionUid) && isPathnameMatch(tab, itemPathname));
   return tabByPathname?.uid || null;
 });
 
@@ -29,27 +53,9 @@ export const isTabForItemActive = ({ itemUid, itemPathname, collectionUid }) => 
     return false;
   }
 
-  if (collectionUid && activeTab.collectionUid !== collectionUid) {
-    return false;
-  }
-
-  if (activeTabUid === itemUid) {
-    return true;
-  }
-
-  if (!itemPathname) {
-    return false;
-  }
-
-  return activeTab.pathname === itemPathname;
+  return isTabMatchForItem(activeTab, { itemUid, itemPathname, collectionUid });
 });
 
 export const isTabForItemPresent = ({ itemUid, itemPathname, collectionUid }) => createSelector([
   (state) => state.tabs.tabs
-], (tabs) => tabs.some((tab) => {
-  if (collectionUid && tab.collectionUid !== collectionUid) {
-    return false;
-  }
-
-  return tab.uid === itemUid || (itemPathname && tab.pathname === itemPathname);
-}));
+], (tabs) => tabs.some((tab) => isTabMatchForItem(tab, { itemUid, itemPathname, collectionUid })));
