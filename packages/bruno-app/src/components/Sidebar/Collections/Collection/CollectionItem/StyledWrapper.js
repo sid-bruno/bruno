@@ -99,6 +99,10 @@ const Wrapper = styled.div`
       overflow: hidden;
     }
 
+    &.item-error .item-name {
+      color: ${(props) => props.theme.colors.text.danger};
+    }
+
     /* Single source of truth for hover/focus states: background and menu icon visibility */
     &:hover,
     &.item-hovered,

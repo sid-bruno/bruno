@@ -73,6 +73,10 @@ const createCollectionJsonFromPathname = (collectionPath) => {
           const requestItem = parseRequest(fs.readFileSync(filePath, 'utf8'), { format });
           currentDirItems.push({ name: file, ...requestItem, pathname: filePath });
         } catch (err) {
+          if (err.code === 'BRU_VERSION_MISMATCH') {
+            console.error(chalk.red(`Error: ${filePath}\n${err.message}`));
+            process.exit(constants.EXIT_STATUS.ERROR_UNSUPPORTED_BRU_VERSION);
+          }
           console.warn(chalk.yellow(`Warning: Skipping invalid file ${filePath}\nError: ${err.message}`));
           global.brunoSkippedFiles = global.brunoSkippedFiles || [];
           global.brunoSkippedFiles.push({ path: filePath, error: err.message });

@@ -6,6 +6,7 @@ const dotenvToJson = require('../v2/src/dotenvToJson');
 
 const collectionBruToJson = require('../v2/src/collectionBruToJson');
 const jsonToCollectionBru = require('../v2/src/jsonToCollectionBru');
+const { BruVersionMismatchError, CURRENT_BRU_VERSION } = require('../v2/src/version');
 
 // Todo: remove V2 suffixes
 // Changes will have to be made to the CLI and GUI
@@ -19,5 +20,8 @@ module.exports = {
   collectionBruToJson,
   jsonToCollectionBru,
 
-  dotenvToJson
+  dotenvToJson,
+
+  BruVersionMismatchError,
+  CURRENT_BRU_VERSION
 };

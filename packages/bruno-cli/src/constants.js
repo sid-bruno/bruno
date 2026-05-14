@@ -31,6 +31,8 @@ const EXIT_STATUS = {
   ERROR_GLOBAL_ENV_REQUIRES_WORKSPACE: 12,
   // The specified global environment was not found
   ERROR_GLOBAL_ENV_NOT_FOUND: 13,
+  // File requires a newer version of Bruno
+  ERROR_UNSUPPORTED_BRU_VERSION: 14,
   // Everything else
   ERROR_GENERIC: 255
 };

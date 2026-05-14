@@ -1,5 +1,6 @@
 const ohm = require('ohm-js');
 const _ = require('lodash');
+const { checkBruVersion } = require('./version');
 
 // this is done to avoid breaking existing pairlist mapping so
 // the key is hidden and not added into the json automatically
@@ -16,7 +17,7 @@ const ANNOTATIONS_KEY = Symbol('annotations');
 // }
 const indentLevel = 4;
 const grammar = ohm.grammar(`Bru {
-  BruEnvFile = (vars | secretvars | color)*
+  BruEnvFile = (meta | vars | secretvars | color)*
 
   nl = "\\r"? "\\n"
   st = " " | "\\t"
@@ -65,6 +66,7 @@ const grammar = ohm.grammar(`Bru {
   secretvars = "vars:secret" array
   vars = "vars" dictionary
   color = "color:" any*
+  meta = "meta" dictionary
 }`);
 
 const mapPairListToKeyValPairs = (pairList = []) => {
@@ -265,6 +267,14 @@ const sem = grammar.createSemantics().addAttribute('ast', {
     return {
       color: anystring.sourceString.trim()
     };
+  },
+  meta(_1, dictionary) {
+    const pairList = mapPairListToKeyValPairs(dictionary.ast);
+    const meta = {};
+    pairList.forEach((pair) => {
+      meta[pair.name] = pair.value;
+    });
+    return { meta };
   }
 });
 
@@ -272,7 +282,9 @@ const parser = (input) => {
   const match = grammar.match(input);
 
   if (match.succeeded()) {
-    return sem(match).ast;
+    const ast = sem(match).ast;
+    checkBruVersion(ast);
+    return ast;
   } else {
     throw new Error(match.message);
   }

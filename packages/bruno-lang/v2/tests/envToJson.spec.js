@@ -1,4 +1,5 @@
 const parser = require('../src/envToJson');
+const { BruVersionMismatchError } = require('../src/version');
 
 describe('env parser', () => {
   it('should parse empty vars', () => {
@@ -424,5 +425,43 @@ vars {
     };
 
     expect(output).toEqual(expected);
+  });
+});
+
+describe('envToJson version field', () => {
+  it('parses an env file with no meta block without error', () => {
+    const input = `
+vars {
+  host: https://api.example.com
+}
+`;
+    expect(() => parser(input)).not.toThrow();
+  });
+
+  it('parses an env file with a meta block and version', () => {
+    const input = `
+meta {
+  version: 1
+}
+
+vars {
+  host: https://api.example.com
+}
+`;
+    const output = parser(input);
+    expect(output.meta.version).toBe('1');
+  });
+
+  it('throws BruVersionMismatchError for an unsupported version in an env file', () => {
+    const input = `
+meta {
+  version: 999
+}
+
+vars {
+  host: https://api.example.com
+}
+`;
+    expect(() => parser(input)).toThrow(BruVersionMismatchError);
   });
 });

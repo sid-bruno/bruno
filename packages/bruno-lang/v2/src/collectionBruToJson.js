@@ -1,6 +1,7 @@
 const ohm = require('ohm-js');
 const _ = require('lodash');
 const { safeParseJson, outdentString } = require('./utils');
+const { checkBruVersion } = require('./version');
 
 // this is done to avoid breaking existing pairlist mapping so
 // the key is hidden and not added into the json automatically
@@ -671,7 +672,7 @@ const parser = (input) => {
 
   if (match.succeeded()) {
     let ast = sem(match).ast;
-
+    checkBruVersion(ast);
     return ast;
   } else {
     throw new Error(match.message);

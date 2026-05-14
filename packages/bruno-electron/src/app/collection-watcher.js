@@ -323,6 +323,16 @@ const add = async (win, pathname, collectionUid, collectionPath, useWorkerThread
         win.webContents.send('main:collection-tree-updated', 'addFile', file);
       } catch (error) {
         console.error(error);
+        file.data = {
+          name: path.relative(collectionPath, pathname),
+          type: 'http-request'
+        };
+        file.error = { message: error?.message, code: error?.code || null };
+        file.partial = true;
+        file.loading = false;
+        file.size = sizeInMB(fileStats?.size);
+        hydrateRequestWithUuid(file.data, pathname);
+        win.webContents.send('main:collection-tree-updated', 'addFile', file);
       } finally {
         watcher.markFileAsProcessed(win, collectionUid, pathname);
       }
@@ -365,11 +375,12 @@ const add = async (win, pathname, collectionUid, collectionPath, useWorkerThread
       }
     } catch (error) {
       file.data = {
-        name: path.basename(pathname),
+        name: path.relative(collectionPath, pathname),
         type: 'http-request'
       };
       file.error = {
-        message: error?.message
+        message: error?.message,
+        code: error?.code || null
       };
       file.partial = true;
       file.loading = false;

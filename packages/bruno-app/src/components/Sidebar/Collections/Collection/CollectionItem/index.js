@@ -235,7 +235,8 @@ const CollectionItem = ({ item, collectionUid, collectionPathname, searchText })
     'item-hovered': isOver && canDrop,
     'drop-target': isOver && dropType === 'inside',
     'drop-target-above': isOver && dropType === 'adjacent',
-    'item-keyboard-focused': isKeyboardFocused
+    'item-keyboard-focused': isKeyboardFocused,
+    'item-error': Boolean(item?.error)
   });
 
   const handleRun = async () => {

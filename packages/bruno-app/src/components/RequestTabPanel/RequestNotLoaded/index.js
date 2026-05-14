@@ -1,4 +1,4 @@
-import { IconLoader2, IconFile, IconAlertTriangle } from '@tabler/icons';
+import { IconLoader2, IconFile, IconAlertTriangle, IconAlertCircle } from '@tabler/icons';
 import { loadLargeRequest } from 'providers/ReduxStore/slices/collections/actions';
 import { useDispatch } from 'react-redux';
 import StyledWrapper from './StyledWrapper';
@@ -35,6 +35,29 @@ const RequestNotLoaded = ({ collection, item }) => {
               <span className="w-12 mr-2 text-muted">Size:</span>
               <div>{item?.size?.toFixed?.(2)} MB</div>
             </div>
+
+            {item?.error && (
+              <div className="flex flex-col mt-2">
+                {item.error.code === 'BRU_VERSION_MISMATCH' ? (
+                  <div className="flex items-center gap-2 px-3 py-2 title bg-red-50 dark:bg-red-900/20">
+                    <IconAlertCircle size={16} className="text-red-500" />
+                    <span className="text-red-600 dark:text-red-400 font-medium">
+                      This file requires a newer version of Bruno. Please upgrade to open it.
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 px-3 py-2 title bg-red-50 dark:bg-red-900/20">
+                      <IconAlertCircle size={16} className="text-red-500" />
+                      <span className="text-red-600 dark:text-red-400 font-medium">Failed to parse file</span>
+                    </div>
+                    <pre className="mt-2 text-xs text-red-500 dark:text-red-400 whitespace-pre-wrap break-all">
+                      {item.error.message}
+                    </pre>
+                  </>
+                )}
+              </div>
+            )}
 
             {!item?.error && (
               <div className="flex flex-col">

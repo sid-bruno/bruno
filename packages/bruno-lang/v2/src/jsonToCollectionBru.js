@@ -19,7 +19,11 @@ const jsonToCollectionBru = (json) => {
 
   if (meta) {
     bru += 'meta {\n';
+    if (meta.version !== undefined) {
+      bru += `  version: ${meta.version}\n`;
+    }
     for (const key in meta) {
+      if (key === 'version') continue;
       bru += `  ${key}: ${meta[key]}\n`;
     }
     bru += '}\n\n';

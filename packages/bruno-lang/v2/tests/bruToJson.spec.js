@@ -1,4 +1,5 @@
 const parser = require('../src/bruToJson');
+const { BruVersionMismatchError, CURRENT_BRU_VERSION } = require('../src/version');
 
 describe('bruToJson parser', () => {
   describe('body:ws', () => {
@@ -203,5 +204,77 @@ body:multipart-form {
       const output = parser(input);
       expect(output).toEqual(expected);
     });
+  });
+});
+
+describe('bruToJson version field', () => {
+  it('parses a file with no version field without error', () => {
+    const input = `
+meta {
+  name: Get Users
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://api.example.com/users
+}
+`;
+    expect(() => parser(input)).not.toThrow();
+  });
+
+  it('includes version in the parsed meta when present', () => {
+    const input = `
+meta {
+  version: 1
+  name: Get Users
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://api.example.com/users
+}
+`;
+    const output = parser(input);
+    expect(output.meta.version).toBe('1');
+  });
+
+  it('throws BruVersionMismatchError when version exceeds CURRENT_BRU_VERSION', () => {
+    const input = `
+meta {
+  version: 999
+  name: Get Users
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://api.example.com/users
+}
+`;
+    expect(() => parser(input)).toThrow(BruVersionMismatchError);
+  });
+
+  it('BruVersionMismatchError carries the correct code and version numbers', () => {
+    const input = `
+meta {
+  version: 999
+  name: Get Users
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://api.example.com/users
+}
+`;
+    try {
+      parser(input);
+    } catch (err) {
+      expect(err.code).toBe('BRU_VERSION_MISMATCH');
+      expect(err.fileVersion).toBe(999);
+      expect(err.maxVersion).toBe(CURRENT_BRU_VERSION);
+    }
   });
 });

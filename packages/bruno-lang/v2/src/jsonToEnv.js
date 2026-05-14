@@ -4,6 +4,7 @@ const { getValueString, indentString, serializeAnnotations } = require('./utils'
 const envToJson = (json) => {
   const variables = _.get(json, 'variables', []);
   const color = _.get(json, 'color', null);
+  const meta = _.get(json, 'meta', null);
 
   const vars = variables
     .filter((variable) => !variable.secret)
@@ -23,6 +24,14 @@ const envToJson = (json) => {
     });
 
   let output = '';
+
+  if (meta && meta.version !== undefined) {
+    output += `meta {
+  version: ${meta.version}
+}
+
+`;
+  }
 
   if (!variables || !variables.length) {
     output += `vars {

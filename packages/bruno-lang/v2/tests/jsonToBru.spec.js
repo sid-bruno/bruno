@@ -1,4 +1,5 @@
 const stringify = require('../src/jsonToBru');
+const bruToJson = require('../src/bruToJson');
 
 describe('jsonToBru stringify', () => {
   describe('body:ws', () => {
@@ -135,5 +136,45 @@ describe('jsonToBru stringify', () => {
         "
       `);
     });
+  });
+});
+
+describe('jsonToBru version field in meta output', () => {
+  it('writes version as the first field in the meta block', () => {
+    const json = {
+      meta: { version: 1, name: 'Get Users', type: 'http', seq: 1 },
+      http: { method: 'get', url: 'https://api.example.com/users' }
+    };
+    const output = stringify(json);
+    const metaBlock = output.match(/meta \{([^}]+)\}/s)?.[1] ?? '';
+    const lines = metaBlock.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+    expect(lines[0]).toBe('version: 1');
+  });
+
+  it('does not write a version field when meta.version is undefined', () => {
+    const json = {
+      meta: { name: 'Get Users', type: 'http', seq: 1 },
+      http: { method: 'get', url: 'https://api.example.com/users' }
+    };
+    const output = stringify(json);
+    expect(output).not.toContain('version:');
+  });
+
+  it('round-trips: parse then stringify preserves version', () => {
+    const input = `meta {
+  version: 1
+  name: Get Users
+  type: http
+  seq: 1
+}
+
+get {
+  url: https://api.example.com/users
+}
+`;
+    const json = bruToJson(input);
+    const output = stringify(json);
+    const reparsed = bruToJson(output);
+    expect(reparsed.meta.version).toBe(json.meta.version);
   });
 });

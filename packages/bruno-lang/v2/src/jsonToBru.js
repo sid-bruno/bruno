@@ -24,7 +24,12 @@ const jsonToBru = (json) => {
     const tags = meta.tags;
     delete meta.tags;
 
+    if (meta.version !== undefined) {
+      bru += `  version: ${meta.version}\n`;
+    }
+
     for (const key in meta) {
+      if (key === 'version') continue;
       bru += `  ${key}: ${meta[key]}\n`;
     }
 
