@@ -313,7 +313,7 @@ const add = async (win, pathname, collectionUid, collectionPath, useWorkerThread
     let content = fs.readFileSync(pathname, 'utf8');
 
     // If worker thread is not used, we can directly parse the file
-    if (!useWorkerThread) {
+    if (format !== 'bru') {
       try {
         file.data = await parseRequest(content, { format });
         file.partial = false;

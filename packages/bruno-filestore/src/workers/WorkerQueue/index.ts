@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import os from 'node:os';
 
 interface QueuedTask {
   priority: number;
@@ -9,24 +10,77 @@ interface QueuedTask {
   reject?: (reason?: any) => void;
 }
 
+type PoolItem = {
+  taken: boolean;
+  worker: Worker;
+};
+
+class WorkerPool {
+  maxWorkers = os.availableParallelism() - 1;
+  pool: PoolItem[] = [];
+  mainScript: string;
+  private waiters: Array<(worker: Worker) => void> = [];
+
+  constructor(mainScript: string) {
+    this.mainScript = mainScript;
+    this.pool.push({ taken: false, worker: new Worker(mainScript) });
+  }
+
+  takeWorker(): Promise<Worker> {
+    return new Promise((resolve) => {
+      const poolItem = this.pool.find((d) => !d.taken);
+      if (poolItem) {
+        poolItem.taken = true;
+        resolve(poolItem.worker);
+        return;
+      }
+
+      if (this.maxWorkers > this.pool.length) {
+        const newWorker = new Worker(this.mainScript);
+        this.pool.push({ taken: true, worker: newWorker });
+        resolve(newWorker);
+        return;
+      }
+
+      this.waiters.push(resolve);
+    });
+  }
+
+  releaseWorker(worker: Worker) {
+    if (this.waiters.length > 0) {
+      const resolve = this.waiters.shift()!;
+      resolve(worker);
+      return;
+    }
+
+    const wk = this.pool.find((d) => Object.is(d.worker, worker));
+    if (!wk) return;
+    wk.taken = false;
+  }
+
+  cleanup() {
+    this.waiters = [];
+    return Promise.allSettled(this.pool.map((d) => d.worker.terminate()));
+  }
+}
+
 class WorkerQueue {
   private queue: QueuedTask[];
-  private isProcessing: boolean;
-  private workers: Record<string, Worker>;
+  private workers: Record<string, WorkerPool>;
 
   constructor() {
     this.queue = [];
-    this.isProcessing = false;
     this.workers = {};
   }
 
   async getWorkerForScriptPath(scriptPath: string) {
-    if (!this.workers) this.workers = {};
-    let worker = this.workers[scriptPath];
-    if (!worker || worker.threadId === -1) {
-      this.workers[scriptPath] = worker = new Worker(scriptPath);
+    if (!this.workers[scriptPath]) {
+      this.workers[scriptPath] = new WorkerPool(scriptPath);
     }
-    return worker;
+    const pool = this.workers[scriptPath];
+    const worker = await pool.takeWorker();
+    const release = pool.releaseWorker.bind(pool);
+    return { worker, release };
   }
 
   async enqueue(task: QueuedTask) {
@@ -40,11 +94,10 @@ class WorkerQueue {
   }
 
   async processQueue() {
-    if (this.isProcessing || this.queue.length === 0) {
+    if (this.queue.length === 0) {
       return;
     }
 
-    this.isProcessing = true;
     const { scriptPath, data, taskType, resolve, reject } = this.queue.shift() as QueuedTask;
 
     try {
@@ -53,19 +106,19 @@ class WorkerQueue {
     } catch (error) {
       reject?.(error);
     } finally {
-      this.isProcessing = false;
       this.processQueue();
     }
   }
 
   async runWorker({ scriptPath, data, taskType }: { scriptPath: string; data: any; taskType: 'parse' | 'stringify' }) {
     return new Promise(async (resolve, reject) => {
-      let worker = await this.getWorkerForScriptPath(scriptPath);
+      const { worker, release } = await this.getWorkerForScriptPath(scriptPath);
 
       const messageHandler = (data: any) => {
         worker.off('message', messageHandler);
         worker.off('error', errorHandler);
         worker.off('exit', exitHandler);
+        release(worker);
 
         if (data?.error) {
           reject(new Error(data?.error));
@@ -78,6 +131,7 @@ class WorkerQueue {
         worker.off('message', messageHandler);
         worker.off('error', errorHandler);
         worker.off('exit', exitHandler);
+        release(worker);
         reject(error);
       };
 
@@ -85,8 +139,7 @@ class WorkerQueue {
         worker.off('message', messageHandler);
         worker.off('error', errorHandler);
         worker.off('exit', exitHandler);
-        // Remove dead worker from cache
-        delete this.workers[scriptPath];
+        release(worker);
         reject(new Error(`Worker stopped with exit code ${code}`));
       };
 
@@ -100,10 +153,7 @@ class WorkerQueue {
 
   async cleanup() {
     const promises = Object.values(this.workers).map((worker) => {
-      if (worker.threadId !== -1) {
-        return worker.terminate();
-      }
-      return Promise.resolve();
+      return worker.cleanup();
     });
 
     await Promise.allSettled(promises);

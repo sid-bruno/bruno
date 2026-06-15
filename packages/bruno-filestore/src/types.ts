@@ -17,10 +17,6 @@ export interface WorkerTask {
   reject?: (reason?: any) => void;
 }
 
-export interface Lane {
-  maxSize: number;
-}
-
 export interface BrunoPresetsExtension {
   request?: {
     type?: string;
