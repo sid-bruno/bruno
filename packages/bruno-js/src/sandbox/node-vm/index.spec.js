@@ -4,6 +4,10 @@ const path = require('path');
 const os = require('os');
 const { runScriptInNodeVm } = require('./index');
 const { __resetNpmModuleStateForTests } = require('./cjs-loader');
+const {
+  __resetScriptCompileCacheForTests,
+  __getScriptCompileCacheSizeForTests
+} = require('./script-compile-cache');
 
 // Windows denies symlink creation without developer mode / admin. Probe once at
 // module load so the dependent tests can be marked skipped in the reporter
@@ -2089,6 +2093,102 @@ describe('node-vm sandbox', () => {
       await runScriptInNodeVm({ script, context, collectionPath, scriptingConfig: {} });
 
       expect(context.bru.setVar).toHaveBeenCalledWith('result', 'a,b');
+    });
+  });
+
+  describe('user script compile cache', () => {
+    const scriptPath = 'req.bru';
+    const minimalContext = () => ({
+      bru: { setVar: jest.fn(), getVar: jest.fn() },
+      console
+    });
+
+    beforeEach(() => {
+      __resetScriptCompileCacheForTests();
+    });
+
+    it('should reuse compiled user script for identical script and scriptPath', async () => {
+      const script = 'void 0;';
+      const context = minimalContext();
+
+      await runScriptInNodeVm({ script, context, collectionPath, scriptingConfig: {}, scriptPath });
+      expect(__getScriptCompileCacheSizeForTests()).toBe(1);
+
+      await runScriptInNodeVm({ script, context, collectionPath, scriptingConfig: {}, scriptPath });
+      expect(__getScriptCompileCacheSizeForTests()).toBe(1);
+    });
+
+    it('should recompile when script content changes', async () => {
+      const context = minimalContext();
+
+      await runScriptInNodeVm({
+        script: 'void 0;',
+        context,
+        collectionPath,
+        scriptingConfig: {},
+        scriptPath
+      });
+      expect(__getScriptCompileCacheSizeForTests()).toBe(1);
+
+      await runScriptInNodeVm({
+        script: 'void 1;',
+        context,
+        collectionPath,
+        scriptingConfig: {},
+        scriptPath
+      });
+      expect(__getScriptCompileCacheSizeForTests()).toBe(2);
+    });
+
+    it('should recompile when scriptPath changes but content is the same', async () => {
+      const script = 'void 0;';
+      const context = minimalContext();
+
+      await runScriptInNodeVm({
+        script,
+        context,
+        collectionPath,
+        scriptingConfig: {},
+        scriptPath: 'a.bru'
+      });
+      expect(__getScriptCompileCacheSizeForTests()).toBe(1);
+
+      await runScriptInNodeVm({
+        script,
+        context,
+        collectionPath,
+        scriptingConfig: {},
+        scriptPath: 'b.bru'
+      });
+      expect(__getScriptCompileCacheSizeForTests()).toBe(2);
+    });
+
+    it('should use a fresh VM context on each run with the same cached script', async () => {
+      const script = `
+        globalThis.__run = (globalThis.__run || 0) + 1;
+        bru.setVar('n', globalThis.__run);
+      `;
+      const context = minimalContext();
+
+      await runScriptInNodeVm({ script, context, collectionPath, scriptingConfig: {}, scriptPath });
+      await runScriptInNodeVm({ script, context, collectionPath, scriptingConfig: {}, scriptPath });
+
+      expect(context.bru.setVar).toHaveBeenNthCalledWith(1, 'n', 1);
+      expect(context.bru.setVar).toHaveBeenNthCalledWith(2, 'n', 1);
+    });
+
+    it('should clear compile cache when __resetScriptCompileCacheForTests is called', async () => {
+      const script = 'void 0;';
+      const context = minimalContext();
+
+      await runScriptInNodeVm({ script, context, collectionPath, scriptingConfig: {}, scriptPath });
+      expect(__getScriptCompileCacheSizeForTests()).toBe(1);
+
+      __resetScriptCompileCacheForTests();
+      expect(__getScriptCompileCacheSizeForTests()).toBe(0);
+
+      await runScriptInNodeVm({ script, context, collectionPath, scriptingConfig: {}, scriptPath });
+      expect(__getScriptCompileCacheSizeForTests()).toBe(1);
     });
   });
 });

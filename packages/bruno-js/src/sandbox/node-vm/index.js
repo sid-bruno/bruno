@@ -8,6 +8,7 @@ const { createCustomRequire, runWithScriptContext, getSharedNpmContext, attachRu
 const { safeGlobals } = require('./constants');
 const { mixinTypedArrays } = require('../mixins/typed-arrays');
 const { wrapScriptInClosure, SANDBOX } = require('../../utils/sandbox');
+const { getOrCompileUserScript } = require('./script-compile-cache');
 
 /**
  * Executes a script in a Node.js VM context with enhanced security and module loading
@@ -95,9 +96,7 @@ async function runScriptInNodeVm({
       const wrappedScript = wrapScriptInClosure(script, SANDBOX.NODEVM);
       let compiledScript;
       try {
-        compiledScript = new vm.Script(wrappedScript, {
-          filename: vmFilename
-        });
+        compiledScript = getOrCompileUserScript(wrappedScript, vmFilename);
       } catch (error) {
         // V8 puts "filename:line" as the first line of syntax error stacks.
         // Parse it so the error formatter can map to the correct source location.
