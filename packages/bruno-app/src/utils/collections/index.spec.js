@@ -17,7 +17,8 @@ import {
   getCollectionVersion,
   isCollectionItemCollapsed,
   getVariableNamesWithScope,
-  getWorkspaceCollections
+  getWorkspaceCollections,
+  getItemsLoadStats
 } from './index';
 import * as platformUtils from 'utils/common/platform';
 
@@ -150,6 +151,18 @@ describe('getCollectionItemCounts', () => {
   it('returns zero counts for empty or missing items', () => {
     expect(getCollectionItemCounts([])).toEqual({ folderCount: 0, requestCount: 0 });
     expect(getCollectionItemCounts(undefined)).toEqual({ folderCount: 0, requestCount: 0 });
+  });
+});
+
+describe('getItemsLoadStats', () => {
+  it('counts partial sidebar rows as still loading', () => {
+    expect(getItemsLoadStats({
+      items: [
+        { partial: true, loading: false },
+        { partial: false, loading: false },
+        { loading: true }
+      ]
+    })).toEqual({ loading: 2, total: 3 });
   });
 });
 

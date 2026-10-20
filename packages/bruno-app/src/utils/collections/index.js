@@ -163,7 +163,7 @@ export const getItemsLoadStats = (folder) => {
   let loadingCount = 0;
   let flattenedItems = flattenItems(folder.items);
   flattenedItems?.forEach((i) => {
-    if (i?.loading) {
+    if (i?.loading || i?.partial) {
       loadingCount += 1;
     }
   });

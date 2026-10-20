@@ -143,7 +143,11 @@ const Info = ({ collection }) => {
               <div className="font-medium">Requests</div>
               <div className="mt-1 text-muted">
                 {
-                  isCollectionLoading ? `${totalItems - itemsLoadingCount} out of ${totalItems} requests in the collection loaded` : `${totalRequestsInCollection} request${totalRequestsInCollection !== 1 ? 's' : ''} in collection`
+                  isCollectionLoading
+                    ? (itemsLoadingCount
+                      ? `${totalItems - itemsLoadingCount} out of ${totalItems} requests in the collection loaded`
+                      : 'Loading requests...')
+                    : `${totalRequestsInCollection} request${totalRequestsInCollection !== 1 ? 's' : ''} in collection`
                 }
               </div>
             </div>
