@@ -398,7 +398,7 @@ describe.each(['bru', 'yml'])('openapi sync with preserve values in a %s collect
       });
     });
 
-    describe('a oneOf property', () => {
+    it('keeps only the declared fields of the user\'s oneOf alternative, with or without type: object', async () => {
       const paymentSpec = (paymentType, ibanProperties) => createPetSpec({
         requestBody: jsonBody(objectSchema({
           amount: { type: 'number' },
@@ -406,24 +406,15 @@ describe.each(['bru', 'yml'])('openapi sync with preserve values in a %s collect
         }))
       }, { schemas: { Card: objectSchema({ cardNumber: string }), Iban: objectSchema(ibanProperties) } });
 
-      const syncPayment = async (paymentType) => {
+      for (const paymentType of [{}, { type: 'object' }]) {
         const previous = paymentSpec(paymentType, { iban: string, bic: string });
         writeStoredSpec(previous);
         writeUserRequestFrom(previous, withJsonBody({ amount: 5, payment: { iban: 'DE', bic: 'B', note: 'mine' } }));
-        return (await previewAndApply(paymentSpec(paymentType, { iban: string }))).map((request) => JSON.parse(request.body.json));
-      };
 
-      it('keeps the user object as written when the spec writes the property as ""', async () => {
-        for (const body of await syncPayment({})) {
-          expect(body).toEqual({ amount: 5, payment: { iban: 'DE', bic: 'B', note: 'mine' } });
+        for (const request of await previewAndApply(paymentSpec(paymentType, { iban: string }))) {
+          expect(JSON.parse(request.body.json)).toEqual({ amount: 5, payment: { iban: 'DE' } });
         }
-      });
-
-      it('drops the fields the alternatives do not declare when the spec writes the property as {}', async () => {
-        for (const body of await syncPayment({ type: 'object' })) {
-          expect(body).toEqual({ amount: 5, payment: { iban: 'DE' } });
-        }
-      });
+      }
     });
 
     it('keeps only the declared fields of a top-level allOf body that imports as {}', async () => {
@@ -437,7 +428,7 @@ describe.each(['bru', 'yml'])('openapi sync with preserve values in a %s collect
       }
     });
 
-    it('keeps the user items as written when the spec writes the array as []', async () => {
+    it('drops a field the spec removed from the user\'s oneOf array items', async () => {
       const paymentsSpec = (ibanProperties) => createPetSpec({
         requestBody: jsonBody(objectSchema({
           amount: { type: 'number' },
@@ -449,7 +440,7 @@ describe.each(['bru', 'yml'])('openapi sync with preserve values in a %s collect
       writeUserRequestFrom(previous, withJsonBody({ amount: 5, payments: [{ iban: 'DE', bic: 'B' }] }));
 
       for (const request of await previewAndApply(paymentsSpec({ iban: string }))) {
-        expect(JSON.parse(request.body.json)).toEqual({ amount: 5, payments: [{ iban: 'DE', bic: 'B' }] });
+        expect(JSON.parse(request.body.json)).toEqual({ amount: 5, payments: [{ iban: 'DE' }] });
       }
     });
 
