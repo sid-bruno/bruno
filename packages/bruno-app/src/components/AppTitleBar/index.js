@@ -268,7 +268,7 @@ const AppTitleBar = () => {
   }, [sortedWorkspaces, activeWorkspaceUid, preferences, handlePinWorkspace, handleCreateWorkspace]);
 
   return (
-    <StyledWrapper className={`app-titlebar ${osClass} ${isFullScreen ? 'fullscreen' : ''}`}>
+    <StyledWrapper data-testid="app-titlebar" className={`app-titlebar ${osClass} ${isFullScreen ? 'fullscreen' : ''}`}>
       {createWorkspaceModalOpen && (
         <CreateWorkspace onClose={() => setCreateWorkspaceModalOpen(false)} />
       )}
@@ -280,7 +280,7 @@ const AppTitleBar = () => {
         <div className="titlebar-left">
           {showWindowControls && <AppMenu />}
 
-          <ActionIcon onClick={handleHomeClick} label="Home" size="lg" className="home-button">
+          <ActionIcon onClick={handleHomeClick} label="Home" size="lg" className="home-button" data-testid="home-button">
             <IconHome size={16} stroke={1.5} />
           </ActionIcon>
 

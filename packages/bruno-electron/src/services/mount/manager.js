@@ -1,14 +1,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { JobType, getPool, destroyPool } = require('../pool');
+const { JobType, getPool, destroyPool, JobPriority } = require('../pool');
 const { FileIndex } = require('./file-index');
 const { buildTree } = require('./tree-builder');
 const { defaultClassify, uidForSeed } = require('../../utils/mount');
 const { getWsClient } = require('../../ipc/network/ws-event-handlers');
-const { SearchIndex } = require('../search-index');
-const { toRow, toMetaRow, withParentFolders } = require('../search-index/indexer');
-const { indexCollection, getWrittenBatches, shutdownIndexer } = require('../search-index/client');
-const { preferencesUtil } = require('../../store/preferences');
+const { ingestBatch } = require('../search-index/ingest');
+const { transientManager } = require('../transient');
 
 // cold start only — collection-watcher handles live changes and writes through to the cache
 
@@ -65,19 +63,16 @@ const sendTree = async (collectionUid, collectionPath, tree, emit) => {
 };
 
 const ensureTransientDirectory = () => {
-  const base = path.join(require('electron').app.getPath('userData'), 'tmp', 'transient');
+  const base = transientManager.getDirectoryBase();
   if (!fs.existsSync(base)) fs.mkdirSync(base, { recursive: true });
   return fs.mkdtempSync(path.join(base, 'bruno-'));
 };
 
 class MountManager {
   #index = null;
-  #searchIndex = null;
   #mounts = new Map();
-  #activeIndexingCount = 0;
-  #checksInFlight = 0;
 
-  async mount({ win, collectionPath, collectionUid, brunoConfig, emit, workspacePath }) {
+  async mount({ win, collectionPath, collectionUid, brunoConfig, emit }) {
     collectionPath = path.resolve(collectionPath);
 
     if (this.#mounts.has(collectionUid)) {
@@ -86,7 +81,7 @@ class MountManager {
       existing.win = win;
       existing.emit = emit;
       existing.brunoConfig = brunoConfig || existing.brunoConfig;
-      existing.state = this.#getPersistentIndex().entries(existing.collectionPath, { denylist: existing.brunoConfig?.ignore });
+      existing.state = this.#getIndex().entries(existing.collectionPath, { denylist: existing.brunoConfig?.ignore });
       await this.#emitTree(collectionUid, existing);
       return existing.tempDirectoryPath;
     }
@@ -106,20 +101,15 @@ class MountManager {
 
     entry.emit.loading(true);
     try {
-      // This is the file-cache ON path, so it always works against the persistent file index
-      const indexOptions = {
-        ...(await this.getWatcherIndexOptions(collectionPath, workspacePath)),
-        fileIndex: this.#getPersistentIndex()
-      };
-      // with the mtime/hash each copy was saved with, so the search index can tell which rows are still current
-      entry.state = indexOptions.fileIndex.entriesWithMetadata(collectionPath, { denylist: brunoConfig?.ignore });
-      await this.#reconcile(entry, indexOptions);
+      entry.state = this.#getIndex().entries(collectionPath, { denylist: brunoConfig?.ignore });
+      await this.#reconcile(entry);
       await this.#emitTree(collectionUid, entry);
 
+      // skip the startup walk (already done) and stage live edits into the cache
       const collectionWatcher = require('../../app/collection-watcher');
       collectionWatcher.addWatcher(entry.win, collectionPath, collectionUid, brunoConfig, false, false, {
         ignoreInitial: true,
-        ...indexOptions
+        fileIndex: this.#getIndex()
       });
       collectionWatcher.addTempDirectoryWatcher(entry.win, tempDirectoryPath, collectionUid, collectionPath);
     } catch (err) {
@@ -149,186 +139,33 @@ class MountManager {
     await Promise.all(
       Array.from(this.#mounts.keys()).map((uid) => this.unmount(uid).catch(() => {}))
     );
-    await shutdownIndexer();
     await destroyPool({ force }).catch(() => {});
-    // both indexes run on the shared database, which the sqlite service closes
-    this.#index = null;
-    this.#searchIndex = null;
-  }
-
-  getSearchIndexSize() {
-    return this.#getSearchIndex().size();
-  }
-
-  // Indexes the watcher keeps in sync with live edits. The file index only exists while the file cache is ON,
-  // and the search index is only wired up (with the workspace its rows are scoped to) when search indexing is enabled.
-  async getWatcherIndexOptions(collectionPath, workspacePath) {
-    const searchIndexEnabled = preferencesUtil.isSearchIndexEnabled();
-    return {
-      fileIndex: this.#getIndex(),
-      searchIndex: searchIndexEnabled ? this.#getSearchIndex() : null,
-      workspacePathname: searchIndexEnabled ? await this.#resolveWorkspacePath(collectionPath, workspacePath) : null
-    };
-  }
-
-  clearSearchIndex() {
-    this.#getSearchIndex().clear();
-  }
-
-  searchIndex(term, options = {}) {
-    return this.#getSearchIndex().search(term, options);
-  }
-
-  async searchIndexTrees(term, workspacePath, knownRevision, { limit, collectionPaths } = {}) {
-    const searchIndex = this.#getSearchIndex();
-    const revision = searchIndex.revision + getWrittenBatches();
-    const indexing = this.#activeIndexingCount > 0 || this.#checksInFlight > 0;
-    if (knownRevision === revision) return { revision, unchanged: true, indexing };
-
-    let matches = [];
-    let total = 0;
-    if (Number.isInteger(limit) && Array.isArray(collectionPaths)) {
-      for (const collectionPath of collectionPaths) {
-        const root = path.resolve(collectionPath);
-        total += searchIndex.countRequestsInCollection(term, root, { workspacePath });
-        if (matches.length < limit) {
-          matches = matches.concat(searchIndex.searchRequestsInCollection(term, root, { workspacePath, limit: limit - matches.length }));
-        }
-      }
-    } else {
-      matches = this.searchIndex(term, { scope: 'request', workspacePath });
-      total = matches.length;
-    }
-
-    const byCollection = new Map();
-    for (const row of matches) {
-      if (!byCollection.has(row.collectionPath)) byCollection.set(row.collectionPath, []);
-      byCollection.get(row.collectionPath).push(row);
-    }
-
-    const trees = {};
-    for (const [collectionPath, rows] of byCollection) {
-      trees[collectionPath] = this.#buildTreeFromIndexRows(collectionPath, rows, { onlyFoldersWithRows: true });
-    }
-    return { revision, trees, total, loaded: matches.length, indexing };
-  }
-
-  async getIndexTree({ collectionPath, collectionName }) {
-    const root = path.resolve(collectionPath);
-    await this.indexCollectionInBackground({ collectionPath: root, collectionName }).catch(() => {});
-    const rows = this.#getSearchIndex().rowsForCollection(root);
-    return { items: this.#buildTreeFromIndexRows(root, rows) };
-  }
-
-  async indexCollectionInBackground({ collectionPath, collectionName, workspacePath }) {
-    if (!preferencesUtil.isSearchIndexEnabled()) return;
-    const root = path.resolve(collectionPath);
-    if (this.#isMounted(root)) return;
-    const resolvedWorkspacePath = await this.#resolveWorkspacePath(root, workspacePath);
-    const twoPass = this.#isTwoPass();
-    await this.#withIndexingSession((onWork) => indexCollection({
-      collectionPath: root,
-      collectionName,
-      workspacePath: resolvedWorkspacePath,
-      fileIndex: this.#getIndex(),
-      mode: twoPass ? 'quick' : 'complete',
-      onWork,
-      onWrite: () => this.#broadcast('main:search-index-written')
-    }));
-    if (twoPass) {
-      this.#fillCollection({ root, collectionName, workspacePath: resolvedWorkspacePath });
+    if (this.#index) {
+      this.#index.close();
+      this.#index = null;
     }
   }
 
-  #isMounted(root) {
-    return Array.from(this.#mounts.values()).some((entry) => entry.collectionPath === root);
-  }
-
-  #isTwoPass() {
-    return Boolean(this.#getIndex()) && preferencesUtil.isTwoPassIndexingEnabled();
-  }
-
-  #fillCollection({ root, collectionName, workspacePath }) {
-    return indexCollection({
-      collectionPath: root,
-      collectionName,
-      workspacePath,
-      fileIndex: this.#getIndex(),
-      mode: 'fill',
-      shouldStop: () => this.#isMounted(root)
-    }).catch(() => {});
-  }
-
-  async indexManyCollectionsInBackground(collections, workspacePath) {
-    this.#checksInFlight += 1;
+  getCacheSize() {
     try {
-      await this.#indexManyCollections(collections, workspacePath);
-    } finally {
-      this.#checksInFlight -= 1;
+      return fs.statSync(this.#getIndex().dbPath).size;
+    } catch (err) {
+      if (err && err.code === 'ENOENT') return 0;
+      throw err;
     }
   }
 
-  async #indexManyCollections(collections, workspacePath) {
-    if (!preferencesUtil.isSearchIndexEnabled()) return;
-    const fileIndex = this.#getIndex();
-    const twoPass = this.#isTwoPass();
-    const sessionStart = performance.now();
-    let didWork = false;
-    const priorPaths = new Set(this.#getSearchIndex().collectionPaths());
-    const resolved = collections.map(({ path: collectionPath, name: collectionName }) => ({
-      root: path.resolve(collectionPath),
-      collectionName
-    }));
-    // collections the search index already knows are quick (most files are skipped), so they go first
-    const isFast = (c) => priorPaths.has(c.root);
-    const ordered = [
-      ...resolved.filter(isFast),
-      ...resolved.filter((c) => !isFast(c))
-    ];
-
-    await this.#withIndexingSession(async (sessionOnWork) => {
-      const onWork = () => {
-        didWork = true;
-        sessionOnWork();
-      };
-      for (const { root, collectionName } of ordered) {
-        await indexCollection({
-          collectionPath: root,
-          collectionName,
-          workspacePath,
-          fileIndex,
-          mode: twoPass ? 'quick' : 'complete',
-          onWork,
-          onWrite: () => this.#broadcast('main:search-index-written')
-        }).catch(() => {});
-      }
-    });
-    if (!twoPass) return;
-    // if (didWork) console.log(`[search-index] SEARCH READY after ${(performance.now() - sessionStart).toFixed(0)} ms (pass 1 over ${ordered.length} collections)`);
-
-    for (const { root, collectionName } of ordered) {
-      if (this.#isMounted(root)) continue;
-      await this.#fillCollection({ root, collectionName, workspacePath });
-    }
-    // if (didWork) console.log(`[search-index] ALL PASSES DONE after ${(performance.now() - sessionStart).toFixed(0)} ms (pass 1 + pass 2)`);
-  }
-
-  getIndexingStatus() {
-    return {
-      isIndexing: this.#activeIndexingCount > 0
-    };
+  clearCache() {
+    this.#getIndex().clear();
   }
 
   clearCollectionIndex(collectionPath) {
-    const root = path.resolve(collectionPath);
-    this.#getPersistentIndex().clearCollection(root);
-    this.#getSearchIndex().clearCollection(root);
+    this.#getIndex().clearCollection(path.resolve(collectionPath));
   }
 
-  async #reconcile(entry, indexOptions) {
-    const { fileIndex } = indexOptions;
+  async #reconcile(entry) {
     const denylist = entry.brunoConfig?.ignore || [];
-    const { added, updated, removed } = await fileIndex.status(entry.collectionPath, { denylist });
+    const { added, updated, removed } = await this.#getIndex().status(entry.collectionPath, { denylist });
 
     const toParse = [];
     for (const e of [...added, ...updated]) {
@@ -343,12 +180,12 @@ class MountManager {
       await Promise.allSettled(
         toParse.map(async (e) => {
           try {
-            const result = await pool.runOnce(JobType.ParseFile, {
+            const result = await pool.run(JobType.ParseFile, {
               collectionPath: entry.collectionPath,
               relativePath: e.relativePath,
               format: e.format,
               type: e.type
-            });
+            }, { priority: JobPriority.mount });
             parsed.set(e.relativePath, result);
           } catch (err) {
             parsed.set(e.relativePath, {
@@ -360,7 +197,7 @@ class MountManager {
       );
     }
 
-    fileIndex.transaction(() => {
+    this.#getIndex().transaction(() => {
       for (const e of toParse) {
         const result = parsed.get(e.relativePath);
         if (!result) continue;
@@ -369,7 +206,7 @@ class MountManager {
           continue;
         }
         entry.state.set(e.relativePath, { data: result.data, raw: result.raw });
-        fileIndex.stage(entry.collectionPath, {
+        this.#getIndex().stage(entry.collectionPath, {
           op: 'add',
           relativePath: e.relativePath,
           mtime: result.mtime,
@@ -380,156 +217,25 @@ class MountManager {
       }
       for (const e of removed) {
         entry.state.delete(e.relativePath);
-        fileIndex.stage(entry.collectionPath, { op: 'remove', relativePath: e.relativePath });
+        this.#getIndex().stage(entry.collectionPath, { op: 'remove', relativePath: e.relativePath });
       }
     });
-
-    if (indexOptions.searchIndex) {
-      try {
-        this.#syncSearchIndex(entry, parsed, indexOptions);
-      } catch (err) {
-        console.error(`[mount] search index sync failed for ${entry.collectionPath}`, err);
-      }
-    }
-  }
-
-  // Brings the collection's search rows in line with what was just reconciled, reusing the
-  // parse results and cached entries so nothing is parsed a second time for search.
-  #syncSearchIndex(entry, parsed, { searchIndex, workspacePathname }) {
-    const root = entry.collectionPath;
-    const collectionName = searchIndex.collectionNameFor(root) || entry.brunoConfig?.name || path.basename(root);
-    const stored = searchIndex.entriesFor(root);
-    const storedMeta = searchIndex.metaEntriesFor(root);
-    const rewriteErrors = this.#isTwoPass();
-
-    searchIndex.transaction(() => {
-      for (const [relativePath, cached] of entry.state) {
-        const isRequest = defaultClassify(relativePath)?.type === 'request';
-        const source = parsed.get(relativePath) ?? cached;
-        if (source.mtime === undefined) continue;
-        // a request that failed to parse still gets a row with the error; a naming file that failed has nothing to give
-        if (source.error && !isRequest) continue;
-
-        const prior = (isRequest ? stored : storedMeta).get(relativePath);
-        if (prior && !(rewriteErrors && source.error) && prior.mtime === source.mtime && prior.hash === source.hash) continue;
-
-        const file = { relativePath, mtime: source.mtime, hash: source.hash, data: source.data, error: source.error };
-        if (isRequest) {
-          searchIndex.upsert(toRow(root, collectionName, file, workspacePathname));
-        } else {
-          // collection and folder files carry the names and order the index keeps for them
-          const metaRow = toMetaRow(root, file);
-          if (metaRow) searchIndex.upsertMeta(metaRow);
-        }
-      }
-      for (const relativePath of stored.keys()) {
-        if (!entry.state.has(relativePath)) searchIndex.remove(root, relativePath);
-      }
-      for (const relativePath of storedMeta.keys()) {
-        if (!entry.state.has(relativePath)) searchIndex.removeMeta(root, relativePath);
-      }
-
-      // Folders of the files that were read. Empty folders are not visible here; the watcher and the index run add them.
-      searchIndex.addFolders({
-        collectionPath: root,
-        collectionName,
-        workspacePath: workspacePathname,
-        folderPaths: withParentFolders([...entry.state.keys()].map((relativePath) => path.dirname(relativePath)).filter((dir) => dir !== '.'))
-      });
+    const { collectionPath } = entry;
+    ingestBatch({
+      parsed: [...parsed.values()].map((result) => ({ collectionPath, result })),
+      removed: removed.map(({ relativePath }) => ({ collectionPath, relativePath }))
     });
-  }
-
-  // The search index rows go through the same tree builder as a mounted collection: each row stands in for a
-  // parsed request file, so folders, ordering and uids come out exactly as they do after a mount
-  #buildTreeFromIndexRows(collectionPath, rows, { onlyFoldersWithRows = false } = {}) {
-    const { getRequestUid } = require('../../cache/requestUids');
-    const folders = this.#getSearchIndex().foldersFor(collectionPath).filter(({ folderPath }) => {
-      if (!onlyFoldersWithRows) return true;
-      return rows.some((row) => row.folderPath === folderPath || row.folderPath?.startsWith(`${folderPath}${path.sep}`));
-    });
-    const parserResults = new Map(rows.map((row) => [row.requestPath, {
-      data: {
-        name: row.requestName,
-        type: row.requestProtocol,
-        // the index reads integers back as BigInt; a missing seq reads as 1, the default the file parsers apply
-        seq: Number(row.requestSeq ?? 1),
-        request: { method: row.requestType, url: row.requestUrl }
-      },
-      // a request that could not be parsed carries its error, so it shows the same error mark as in an open collection
-      ...(row.requestError ? { error: { message: row.requestError } } : {})
-    }]));
-    // Folder names and order come from the folder files, as they do in a mounted collection
-    for (const { folderPath, name, seq } of folders) {
-      parserResults.set(path.join(folderPath, 'folder.bru'), {
-        data: { meta: { name: name ?? undefined, seq: seq === null ? undefined : Number(seq) } }
-      });
-    }
-    return buildTree(collectionPath, parserResults, { uidFor: getRequestUid }).items;
   }
 
   async #emitTree(collectionUid, entry) {
     const { getRequestUid } = require('../../cache/requestUids');
     const tree = buildTree(entry.collectionPath, entry.state, { uidFor: getRequestUid });
-    entry.state = new Map();
     await sendTree(collectionUid, entry.collectionPath, tree, entry.emit);
   }
 
-  #getPersistentIndex() {
+  #getIndex() {
     if (!this.#index) this.#index = new FileIndex();
     return this.#index;
-  }
-
-  // null while the file cache is OFF: nothing is cached, files are parsed again whenever they are needed
-  #getIndex() {
-    return preferencesUtil.isFileCacheEnabled() ? this.#getPersistentIndex() : null;
-  }
-
-  #getSearchIndex() {
-    if (!this.#searchIndex) this.#searchIndex = new SearchIndex();
-    return this.#searchIndex;
-  }
-
-  async #resolveWorkspacePath(collectionPath, workspacePath) {
-    if (workspacePath) return path.resolve(workspacePath);
-    const { findWorkspacePathForCollection } = require('../../utils/workspace-collections');
-    return findWorkspacePathForCollection(collectionPath).catch(() => null);
-  }
-
-  // The "indexing" state starts when a run finds something to read or write, not when it starts looking. Every search
-  // session checks all collections for outside changes; when nothing changed there is no indexing to show.
-  async #withIndexingSession(run) {
-    let working = false;
-    const onWork = () => {
-      if (working) return;
-      working = true;
-      this.#beginIndexingSession();
-    };
-    try {
-      return await run(onWork);
-    } finally {
-      if (working) this.#endIndexingSession();
-    }
-  }
-
-  #beginIndexingSession() {
-    this.#activeIndexingCount++;
-    if (this.#activeIndexingCount === 1) this.#broadcastIndexingStatus();
-  }
-
-  #endIndexingSession() {
-    this.#activeIndexingCount--;
-    if (this.#activeIndexingCount === 0) this.#broadcastIndexingStatus();
-  }
-
-  #broadcastIndexingStatus() {
-    this.#broadcast('main:search-index-status', this.getIndexingStatus());
-  }
-
-  #broadcast(channel, payload) {
-    const { BrowserWindow } = require('electron');
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(channel, payload);
-    }
   }
 }
 

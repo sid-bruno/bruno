@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import range from 'lodash/range';
 import classnames from 'classnames';
 import { useDrag, useDrop } from 'react-dnd';
@@ -23,7 +23,7 @@ import {
 } from '@tabler/icons';
 import { useSelector, useDispatch, useStore } from 'react-redux';
 import { addTab, focusTab, makeTabPermanent } from 'providers/ReduxStore/slices/tabs';
-import { handleMultipleCollectionItemsDrop, sendRequest, showInFolder, pasteItem, saveRequest, cloneItem, mountCollection } from 'providers/ReduxStore/slices/collections/actions';
+import { handleMultipleCollectionItemsDrop, sendRequest, showInFolder, pasteItem, saveRequest, cloneItem, mountCollection, revealItemInSidebar } from 'providers/ReduxStore/slices/collections/actions';
 import { sanitizeName } from 'utils/common/regex';
 import { formatIpcError } from 'utils/common/error';
 import { toggleCollectionItem, expandItem, collapseItem, addResponseExample } from 'providers/ReduxStore/slices/collections';
@@ -39,23 +39,28 @@ import RunCollectionItem from '../RunCollectionItem';
 import GenerateCodeItem from '../GenerateCodeItem';
 import { isItemARequest, isItemAFolder } from 'utils/tabs';
 import { doesRequestMatchSearchText, doesFolderHaveItemsMatchSearchText } from 'utils/collections/search';
-import { highlightText } from 'components/GlobalSearchModal/utils/searchUtils';
-import { getDefaultRequestPaneTab, getItemTypeLabel } from 'utils/collections';
+import highlightSearchMatch from 'components/Sidebar/Collections/highlightSearchMatch';
+import {
+  getDefaultRequestPaneTab,
+  getItemTypeLabel,
+  findItemInCollectionByPathname
+} from 'utils/collections';
 import toast from 'react-hot-toast';
 import StyledWrapper from './StyledWrapper';
 import NetworkError from 'components/ResponsePane/NetworkError/index';
 import CollectionItemInfo from '../CollectionItemInfo/index';
 import CollectionItemIcon from '../CollectionItemIcon';
+import InvalidFilesBadge from '../../InvalidFilesBadge';
 import ExampleIcon from 'components/Icons/ExampleIcon';
 import {
   getTabUidForItem as getTabUidForItemSelector,
-  isTabForItemActive as isTabForItemActiveSelector,
-  isTabForItemPresent as isTabForItemPresentSelector
+  isTabForItemActive as isTabForItemActiveSelector
 } from 'src/selectors/tab';
-import { isEqual } from 'lodash';
+import { makeSelectInvalidItemCountForFolder, selectCollectionByUid } from 'src/selectors/collections';
 import {
   canCollectionItemBeDropped,
   determineCollectionItemDrop,
+  getCloneDisplayName,
   getInitialExampleName,
   findParentItemInCollection,
   getSortedDraggedItems,
@@ -79,8 +84,6 @@ const CollectionItemRow = ({
   collectionUid,
   collectionPathname,
   searchText,
-  isSearchCollapsed,
-  onToggleSearchCollapse,
   openBulkMenu,
   children,
   isItemMultiDragDisabled,
@@ -88,23 +91,17 @@ const CollectionItemRow = ({
   multiDragItems: multiDragItemsForSelection
 }) => {
   const { dropdownContainerRef } = useSidebarAccordion();
-  const selectorInput = {
-    itemUid: item.uid,
-    itemPathname: item.pathname,
-    collectionUid
-  };
-
-  const _isTabForItemActiveSelector = isTabForItemActiveSelector(selectorInput);
-  const isTabForItemActive = useSelector(_isTabForItemActiveSelector, isEqual);
-
-  const _isTabForItemPresentSelector = isTabForItemPresentSelector(selectorInput);
-  const isTabForItemPresent = useSelector(_isTabForItemPresentSelector, isEqual);
-
-  const _tabUidForItemSelector = getTabUidForItemSelector(selectorInput);
-  const tabUidForItem = useSelector(_tabUidForItemSelector, isEqual);
+  const tabSelectorInput = useMemo(
+    () => ({ itemUid: item.uid, itemPathname: item.pathname, collectionUid }),
+    [item.uid, item.pathname, collectionUid]
+  );
+  const tabUidForItem = useSelector(useMemo(() => getTabUidForItemSelector(tabSelectorInput), [tabSelectorInput]));
+  const isTabForItemActive = useSelector(
+    useMemo(() => isTabForItemActiveSelector(tabSelectorInput), [tabSelectorInput])
+  );
+  const isTabForItemPresent = tabUidForItem !== null;
 
   const isSidebarDragging = useSelector((state) => state.app.isDragging);
-  const collection = useSelector((state) => state.collections.collections.find((c) => c.uid === collectionUid));
   const store = useStore();
   const { hasCopiedItems } = useSelector((state) => state.app.clipboard);
   const selectedSidebarUids = useSelector((state) => state.collections.selectedSidebarUids);
@@ -138,8 +135,12 @@ const CollectionItemRow = ({
   const examplesExpanded = !isCollectionItemCollapsed(item);
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
   const hasSearchText = searchText && searchText?.trim()?.length;
-  const itemIsCollapsed = hasSearchText ? Boolean(isSearchCollapsed) : isCollectionItemCollapsed(item);
+  const itemIsCollapsed = hasSearchText ? false : isCollectionItemCollapsed(item);
   const isFolder = isItemAFolder(item);
+  const selectFolderInvalidItemCount = useMemo(makeSelectInvalidItemCountForFolder, []);
+  const invalidItemCount = useSelector((state) =>
+    isFolder ? selectFolderInvalidItemCount(state, collectionUid, item.items) : 0
+  );
 
   const isCloneable = isFolder || isItemARequest(item) || item.type === 'app';
 
@@ -179,14 +180,14 @@ const CollectionItemRow = ({
 
   const [{ isDragging }, drag, dragPreview] = useDrag({
     type: isRedirectedToCollectionDrag ? 'collection' : 'collection-item',
-    item: isRedirectedToCollectionDrag
-      ? { ...collection, wasSelected: true, multiSelectedItems: multiDragCollections }
+    item: () => (isRedirectedToCollectionDrag
+      ? { ...selectCollectionByUid(store.getState(), collectionUid), wasSelected: true, multiSelectedItems: multiDragCollections }
       : {
           ...item,
           sourceCollectionUid: collectionUid,
           wasSelected: isSelected,
           ...(multiDragItems ? { multiSelectedItems: multiDragItems } : {})
-        },
+        }),
     canDrag: !isDragDisabled,
     collect: (monitor) => ({
       isDragging: monitor.isDragging()
@@ -328,16 +329,7 @@ const CollectionItemRow = ({
     );
   };
 
-  const handleClick = (event) => {
-    if (handleSelectionClick(event)) return;
-    if (event && event.detail != 1) return;
-    if (collection?.mountStatus === 'unmounted') {
-      dispatch(mountCollection({
-        collectionUid,
-        collectionPathname: collection.pathname,
-        brunoConfig: collection.brunoConfig
-      }));
-    }
+  const openItem = () => {
     const isRequest = isItemARequest(item);
     const isApp = item.type === 'app';
     if (isRequest || isApp) {
@@ -355,7 +347,8 @@ const CollectionItemRow = ({
           collectionUid: collectionUid,
           ...(isRequest ? { requestPaneTab: getDefaultRequestPaneTab(item) } : {}),
           type: item.type,
-          pathname: item.pathname
+          pathname: item.pathname,
+          name: item.name
         })
       );
     } else {
@@ -364,12 +357,10 @@ const CollectionItemRow = ({
           uid: item.uid,
           collectionUid: collectionUid,
           type: 'folder-settings',
-          pathname: item.pathname
+          pathname: item.pathname,
+          name: item.name
         })
       );
-      if (hasSearchText && isSearchCollapsed) {
-        onToggleSearchCollapse(item.uid);
-      }
       if (item.collapsed) {
         dispatch(
           toggleCollectionItem({
@@ -381,13 +372,34 @@ const CollectionItemRow = ({
     }
   };
 
+  const revealMountedItem = () => {
+    const collection = selectCollectionByUid(store.getState(), collectionUid);
+    const mounted = collection && findItemInCollectionByPathname(collection, item.pathname);
+    if (!mounted) return;
+    dispatch(revealItemInSidebar({ collectionUid, itemUid: mounted.uid, expandTarget: isItemAFolder(item) }));
+  };
+
+  const handleClick = (event) => {
+    if (handleSelectionClick(event)) return;
+    if (event && event.detail != 1) return;
+    openItem();
+    const collection = selectCollectionByUid(store.getState(), collectionUid);
+    if (collection && collection.mountStatus !== 'mounted' && collection.mountStatus !== 'mounting') {
+      dispatch(mountCollection({
+        collectionUid,
+        collectionPathname: collection.pathname,
+        brunoConfig: collection.brunoConfig,
+        skipTabRestore: true,
+        prioritizedPathname: item.pathname
+      }))
+        .then(revealMountedItem)
+        .catch(() => {});
+    }
+  };
+
   const handleFolderCollapse = (e) => {
     e.stopPropagation();
     e.preventDefault();
-    if (hasSearchText) {
-      onToggleSearchCollapse(item.uid);
-      return;
-    }
     dispatch(
       toggleCollectionItem({
         itemUid: item.uid,
@@ -681,11 +693,12 @@ const CollectionItemRow = ({
     toast.success(`${getItemTypeLabel(item)} copied`);
   };
 
-  // One-click clone: display name becomes "<source> copy"; the filesystem name
-  // uniqueness is resolved silently by electron.
+  // One-click clone: display name takes the next free copy slot among siblings; the filesystem
+  // name uniqueness is resolved silently by electron.
   const handleCloneItem = () => {
     if (!isCloneable) return;
-    dispatch(cloneItem(`${item.name} copy`, sanitizeName(`${item.name} copy`), item.uid, collectionUid))
+    const newName = getCloneDisplayName(selectCollectionByUid(store.getState(), collectionUid), item);
+    dispatch(cloneItem(newName, sanitizeName(newName), item.uid, collectionUid))
       .then(() => toast.success(`${getItemTypeLabel(item)} cloned!`))
       .catch((err) => toast.error(formatIpcError(err) || `An error occurred while cloning the ${getItemTypeLabel(item).toLowerCase()}`));
   };
@@ -694,6 +707,7 @@ const CollectionItemRow = ({
     // Determine target folder: if item is a folder, paste into it; otherwise paste into parent folder
     let targetFolderUid = item.uid;
     if (!isFolder) {
+      const collection = selectCollectionByUid(store.getState(), collectionUid);
       const parentFolder = findParentItemInCollection(collection, item.uid);
       targetFolderUid = parentFolder ? parentFolder.uid : null;
     }
@@ -830,8 +844,9 @@ const CollectionItemRow = ({
             <div className="ml-1 flex w-full h-full items-center overflow-hidden">
               <CollectionItemIcon item={item} />
               <span className="item-name" title={item.name}>
-                {hasSearchText ? highlightText(item.name, searchText) : item.name}
+                {highlightSearchMatch(item.name, searchText)}
               </span>
+              <InvalidFilesBadge count={invalidItemCount} collectionUid={collectionUid} rowUid={item.uid} />
             </div>
           </div>
           {!isDragging && !isMultiSelected && (

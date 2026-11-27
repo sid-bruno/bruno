@@ -10,7 +10,6 @@ import {
 } from './formats/bru';
 import {
   parseYmlItem,
-  parseYmlItemMeta,
   parseYmlCollection,
   parseYmlFolder,
   parseYmlEnvironment,
@@ -42,13 +41,6 @@ export const parseRequest = (content: string, options: ParseOptions = { format: 
   throw new Error(`Unsupported format: ${options.format}`);
 };
 
-export const parseRequestMeta = (content: string, options: ParseOptions = { format: DEFAULT_COLLECTION_FORMAT }): any => {
-  if (options.format === 'yml') {
-    return parseYmlItemMeta(content);
-  }
-  return null;
-};
-
 export const parseRequestAndRedactBody = (content: string, options: ParseOptions = { format: 'bru' }): any => {
   if (options.format === 'bru') {
     return bruRequestParseAndRedactBodyData(content);
@@ -74,10 +66,10 @@ const getWorkerInstance = (): BruParserWorker => {
   return globalWorkerInstance;
 };
 
-export const parseRequestViaWorker = async (content: string, options: { format: CollectionFormat; filename?: string }): Promise<any> => {
+export const parseRequestViaWorker = async (content: string, options: { format: CollectionFormat; filename?: string; priority?: number }): Promise<any> => {
   const fileParserWorker = getWorkerInstance();
 
-  return await fileParserWorker.parseRequest(content, options.format);
+  return await fileParserWorker.parseRequest(content, options.format, options.priority);
 };
 
 export const stringifyRequestViaWorker = async (requestObj: any, options: { format: CollectionFormat }): Promise<string> => {

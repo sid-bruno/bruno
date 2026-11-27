@@ -4,13 +4,14 @@ import { savePreferences, clearHttpHttpsAgentCache } from 'providers/ReduxStore/
 import toast from 'react-hot-toast';
 import get from 'lodash/get';
 import { IconEraser } from '@tabler/icons';
-import useFileCache from 'hooks/useFileCache';
-import useSearchIndex from 'hooks/useSearchIndex';
+import useCacheSize from 'hooks/useCacheSize';
 import { useTheme } from 'providers/Theme';
 import ToggleSwitch from 'components/ToggleSwitch';
 import ActionIcon from 'ui/ActionIcon';
 import StyledWrapper from './StyledWrapper';
 import { formatSize } from 'utils/common';
+
+const fileIndexBytes = (row) => row?.bytes ?? null;
 
 const Cache = () => {
   const preferences = useSelector((state) => state.app.preferences);
@@ -19,12 +20,16 @@ const Cache = () => {
 
   const fileCacheEnabled = get(preferences, 'cache.file.enabled', false);
   const sslSessionEnabled = get(preferences, 'cache.sslSession.enabled', false);
-  const searchIndexEnabled = get(preferences, 'cache.searchIndex.enabled', false);
-  const twoPassEnabled = get(preferences, 'cache.searchIndex.twoPass', false);
-  const twoPassAvailable = searchIndexEnabled && fileCacheEnabled;
 
-  const { size: fileCacheSize, clear: clearFileCache } = useFileCache();
-  const { size: searchIndexSize, building: searchIndexBuilding, clear: clearSearchIndex } = useSearchIndex();
+  const { size: fileCacheSize, clear: clearFileCache } = useCacheSize({
+    sizeChannel: 'datastore:file-index:file_index_size',
+    clearChannel: 'datastore:file-index:file_index_clear',
+    toSize: fileIndexBytes
+  });
+  const { size: searchIndexSize, clear: clearSearchIndex } = useCacheSize({
+    sizeChannel: 'renderer:get-search-index-size',
+    clearChannel: 'renderer:clear-search-index'
+  });
 
   const persist = (next) => {
     dispatch(savePreferences({ ...preferences, cache: next })).catch(() => {
@@ -36,21 +41,6 @@ const Cache = () => {
     persist({
       ...preferences.cache,
       file: { enabled: !fileCacheEnabled }
-    });
-  };
-
-  const handleToggleSearchIndex = () => {
-    persist({
-      ...preferences.cache,
-      searchIndex: { ...preferences.cache?.searchIndex, enabled: !searchIndexEnabled }
-    });
-  };
-
-  const handleToggleTwoPass = () => {
-    if (!twoPassAvailable) return;
-    persist({
-      ...preferences.cache,
-      searchIndex: { ...preferences.cache?.searchIndex, twoPass: !twoPassEnabled }
     });
   };
 
@@ -77,9 +67,9 @@ const Cache = () => {
   const handleClearSearchIndex = async () => {
     try {
       await clearSearchIndex();
-      toast.success('Search index cleared');
+      toast.success('Search cache cleared');
     } catch (error) {
-      toast.error(`Failed to clear search index: ${error?.message || error}`);
+      toast.error(`Failed to clear search cache: ${error?.message || error}`);
     }
   };
 
@@ -128,60 +118,29 @@ const Cache = () => {
         </div>
       </div>
 
-      <div className="cache-item">
+      <div className="cache-item" data-testid="cache-item-search-index">
         <div className="cache-item-header">
           <div className="cache-item-title-group">
-            <span className="cache-item-title">Search index</span>
+            <span className="cache-item-title">Search cache</span>
           </div>
-          <ToggleSwitch
-            data-testid="cache.searchIndex.enabled"
-            isOn={searchIndexEnabled}
-            handleToggle={handleToggleSearchIndex}
-            size="2xs"
-            activeColor={theme.primary.solid}
-          />
         </div>
         <div className="cache-item-body">
           <div className="cache-item-body-text">
             <p className="cache-item-description">
-              Lets you search requests in collections you haven't opened yet. Clearing it means
-              search results from unopened collections may be unavailable until it's rebuilt.
+              Lets you find requests in collections you haven't opened yet. Clearing it means search results from
+              unopened collections may be unavailable until it's rebuilt.
             </p>
             <p className="cache-item-size">
-              Index size <strong>{searchIndexSize == null ? '—' : formatSize(searchIndexSize)}</strong>
+              Cache size <strong data-testid="search-index-size">{searchIndexSize == null ? '—' : formatSize(searchIndexSize)}</strong>
             </p>
           </div>
           <ActionIcon
-            label="Clear search index"
+            label="Clear search cache"
             onClick={handleClearSearchIndex}
-            disabled={searchIndexBuilding}
             colorOnHover={theme.colors.text.danger}
           >
             <IconEraser size={16} strokeWidth={1.5} />
           </ActionIcon>
-        </div>
-        <div className={`cache-item-option ${twoPassAvailable ? '' : 'disabled'}`}>
-          <div className="cache-item-option-header">
-            <span className="cache-item-option-title">Two-pass indexing</span>
-            <ToggleSwitch
-              data-testid="cache.searchIndex.twoPass"
-              isOn={twoPassEnabled && twoPassAvailable}
-              handleToggle={handleToggleTwoPass}
-              size="2xs"
-              activeColor={theme.primary.solid}
-            />
-          </div>
-          <p className="cache-item-description">
-            Makes search usable sooner. Pass 1 reads only each request's name, method and URL, so search results are
-            ready quickly. Pass 2 then parses the full files in the background to fill the file cache and mark files
-            with errors. The whole run takes about as long as one full pass. A file with an error can show its error
-            mark a little after search is ready.
-          </p>
-          {!twoPassAvailable && (
-            <p className="cache-item-note">
-              Turn on {searchIndexEnabled ? 'File cache' : fileCacheEnabled ? 'Search index' : 'File cache and Search index'} to use this.
-            </p>
-          )}
         </div>
       </div>
 

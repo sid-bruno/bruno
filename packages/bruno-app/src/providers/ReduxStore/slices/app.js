@@ -17,7 +17,6 @@ import {
 
 const initialState = {
   isDragging: false,
-  searchIndexBuilding: false,
   idbConnectionReady: false,
   snapshotReady: false,
   snapshotHydration: {
@@ -77,8 +76,9 @@ const initialState = {
     ai: {
       enabled: false,
       providers: {
-        openai: { enabled: false },
-        anthropic: { enabled: false }
+        'openai': { enabled: false },
+        'anthropic': { enabled: false },
+        'github-copilot': { enabled: false }
       },
       models: {},
       defaultModel: '',
@@ -134,10 +134,6 @@ export const appSlice = createSlice({
     },
     setSnapshotReady: (state, action) => {
       state.snapshotReady = action.payload;
-    },
-    setSearchIndexStatus: (state, action) => {
-      const { isIndexing } = action.payload || {};
-      state.searchIndexBuilding = isIndexing;
     },
     setSidebarState: (state, action) => {
       const { width, collapsed } = action.payload || {};
@@ -297,7 +293,6 @@ export const appSlice = createSlice({
 export const {
   idbConnectionReady,
   setSnapshotReady,
-  setSearchIndexStatus,
   setSidebarState,
   startSnapshotHydrationSession,
   markSnapshotCollectionHydrated,

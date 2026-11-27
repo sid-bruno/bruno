@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import classnames from 'classnames';
 import { uuid } from 'utils/common';
 import { useDrop, useDrag } from 'react-dnd';
@@ -27,7 +27,7 @@ import {
 import OpenAPISyncIcon from 'components/Icons/OpenAPISync';
 import { toggleCollection, collapseFullCollection, clearSidebarSelection } from 'providers/ReduxStore/slices/collections';
 import { mountCollection, moveCollectionAndPersist, handleMultipleCollectionItemsDrop, pasteItem, showInFolder, saveCollectionSecurityConfig } from 'providers/ReduxStore/slices/collections/actions';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector, useStore } from 'react-redux';
 import { addTab, makeTabPermanent } from 'providers/ReduxStore/slices/tabs';
 import { setFocusedSidebarPath } from 'providers/ReduxStore/slices/app';
 import toast from 'react-hot-toast';
@@ -38,13 +38,15 @@ import RemoveCollections from '../RemoveCollections';
 import MoveToWorkspace from '../MoveToWorkspace';
 import { isPathExternalToBasePath } from 'utils/common/path';
 import { doesCollectionHaveItemsMatchingSearchText } from 'utils/collections/search';
-import { highlightText } from 'components/GlobalSearchModal/utils/searchUtils';
+import highlightSearchMatch from 'components/Sidebar/Collections/highlightSearchMatch';
 import { getSortedDraggedItems } from 'utils/collections';
 import { isTabForItemActive } from 'src/selectors/tab';
+import { makeSelectInvalidItemCountForCollection } from 'src/selectors/collections';
 
 import RenameCollection from '../RenameCollection';
 import StyledWrapper from './StyledWrapper';
 import CloneCollection from '../CloneCollection';
+import InvalidFilesBadge from '../InvalidFilesBadge';
 import ShareCollection from 'components/ShareCollection/index';
 import GenerateDocumentation from '../GenerateDocumentation';
 import { getRevealInFolderLabel } from 'utils/common/platform';
@@ -54,14 +56,13 @@ import MenuDropdown from 'ui/MenuDropdown';
 import { useSidebarAccordion } from 'components/Sidebar/SidebarAccordionContext';
 import useKeybinding from 'hooks/useKeybinding';
 import useKeybindingDisplayText from 'hooks/useKeybindingDisplayText';
-import { useBetaFeature, BETA_FEATURES } from 'utils/beta-features';
-import StatusBadge from 'ui/StatusBadge';
+import { useIsMockServerEnabled } from 'utils/mock-server/is-enabled';
 import CreateMockServerModal from 'components/MockServer/CreateMockServerModal';
 import useSidebarSelectionClick from 'hooks/useSidebarSelectionClick';
 import { startBlockedDragTracking } from 'utils/dragBlockedCursor';
 
-const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSearchCollapse, openBulkMenu, children, isCollectionMultiDragDisabled, multiDragCollections }) => {
-  const isMockServerEnabled = useBetaFeature(BETA_FEATURES.MOCK_SERVER);
+const CollectionRow = ({ collection, searchText, isSearchCollapsed, toggleSearchCollection, openBulkMenu, children, isCollectionMultiDragDisabled, multiDragCollections }) => {
+  const isMockServerEnabled = useIsMockServerEnabled();
   const { dropdownContainerRef } = useSidebarAccordion();
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
@@ -76,10 +77,13 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
   const [dropType, setDropType] = useState(null);
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
   const dispatch = useDispatch();
-  const isLoading = collection.isLoading;
+  const isLoading = collection.isLoading || collection.mountStatus === 'mounting';
+  const selectInvalidItemCount = useMemo(makeSelectInvalidItemCountForCollection, []);
+  const invalidItemCount = useSelector((state) => selectInvalidItemCount(state, collection.uid));
   const collectionRef = useRef(null);
 
-  const isCollectionFocused = useSelector(isTabForItemActive({ itemUid: collection.uid }));
+  const selectIsCollectionFocused = useMemo(() => isTabForItemActive({ itemUid: collection.uid }), [collection.uid]);
+  const isCollectionFocused = useSelector(selectIsCollectionFocused);
   const { hasCopiedItems } = useSelector((state) => state.app.clipboard);
   const selectedSidebarUids = useSelector((state) => state.collections.selectedSidebarUids);
   const isSelected = selectedSidebarUids.includes(collection.uid);
@@ -93,7 +97,7 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
   );
   const workspaces = useSelector((state) => state.workspaces.workspaces);
   const collectionSortOrder = useSelector((state) => state.collections.collectionSortOrder);
-  const allCollections = useSelector((state) => state.collections.collections);
+  const store = useStore();
   const isMoveToWorkspaceVisible = isPathExternalToBasePath(activeWorkspace?.pathname, collection.pathname);
 
   const isDragDisabled = isMultiSelected && isCollectionMultiDragDisabled;
@@ -138,7 +142,7 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
   };
 
   const hasSearchText = searchText && searchText?.trim()?.length;
-  const collectionIsCollapsed = hasSearchText ? Boolean(isSearchCollapsed) : collection.collapsed;
+  const collectionIsCollapsed = hasSearchText ? isSearchCollapsed : collection.collapsed;
 
   const iconClassName = classnames({
     'rotate-90': !collectionIsCollapsed
@@ -152,10 +156,6 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
     const isChevronClick = event.target.closest('svg')?.classList.contains('chevron-icon');
 
     ensureCollectionIsMounted();
-
-    if (hasSearchText && isSearchCollapsed && !isChevronClick) {
-      onToggleSearchCollapse(collection.uid);
-    }
 
     if (collection.collapsed) {
       dispatch(toggleCollection(collection.uid));
@@ -186,7 +186,7 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
     e.stopPropagation();
     e.preventDefault();
     if (hasSearchText) {
-      onToggleSearchCollapse(collection.uid);
+      toggleSearchCollection(collection.uid);
       return;
     }
     ensureCollectionIsMounted();
@@ -327,7 +327,7 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
 
         const draggedItems = getSortedDraggedItems({
           draggedItem,
-          allCollections,
+          allCollections: store.getState().collections.collections,
           workspaces,
           activeWorkspace,
           collectionSortOrder,
@@ -346,7 +346,7 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
       } else {
         const draggedItems = getSortedDraggedItems({
           draggedItem,
-          allCollections,
+          allCollections: store.getState().collections.collections,
           workspaces,
           activeWorkspace,
           collectionSortOrder,
@@ -497,7 +497,6 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
       id: 'create-mock-server',
       leftSection: IconServer,
       label: 'Create Mock server',
-      rightSection: <StatusBadge status="info" size="xs">Beta</StatusBadge>,
       onClick: openMockServerDashboard
     }] : []),
     {
@@ -605,10 +604,11 @@ const CollectionRow = ({ collection, searchText, isSearchCollapsed, onToggleSear
               onDoubleClick={handleCollectionDoubleClick}
             />
           </ActionIcon>
-          <div className="ml-1 w-full" id="sidebar-collection-name" title={collection.name}>
-            {hasSearchText ? highlightText(collection.name, searchText) : collection.name}
+          <div className="ml-1 min-w-0" id="sidebar-collection-name" title={collection.name}>
+            {highlightSearchMatch(collection.name, searchText)}
           </div>
-          {isLoading ? <IconLoader2 className="animate-spin mx-1" size={18} strokeWidth={1.5} /> : null}
+          <InvalidFilesBadge count={invalidItemCount} collectionUid={collection.uid} rowUid={collection.uid} />
+          {isLoading ? <IconLoader2 className="animate-spin flex-shrink-0 mx-1 ml-auto" size={18} strokeWidth={1.5} /> : null}
         </div>
         {!isDragging && !isMultiSelected && (
           <div>

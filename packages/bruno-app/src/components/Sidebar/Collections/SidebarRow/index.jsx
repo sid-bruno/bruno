@@ -24,15 +24,9 @@ const resolveRowObject = ({ row, itemsByUid, collectionsByUid, ghostsByPath }) =
   }
 };
 
-const isRowSearchCollapsed = ({ row, searchCollapsedUids }) => {
-  const uid = row.kind === 'collection' ? row.collectionUid : row.itemUid;
-  return Boolean(searchCollapsedUids?.has(uid));
-};
-
 const renderRow = (props) => {
-  const { row, searchText, onToggleSearchCollapse, openBulkMenu, collectionsByUid, isCollectionMultiDragDisabled, isItemMultiDragDisabled, multiDragCollections, multiDragItems } = props;
+  const { row, searchText, searchCollapsedCollectionUids, toggleSearchCollection, openBulkMenu, collectionsByUid, isCollectionMultiDragDisabled, isItemMultiDragDisabled, multiDragCollections, multiDragItems } = props;
   const resolved = resolveRowObject(props);
-  const isSearchCollapsed = isRowSearchCollapsed(props);
 
   switch (row.kind) {
     case 'collection': {
@@ -41,8 +35,8 @@ const renderRow = (props) => {
         <CollectionRow
           collection={resolved}
           searchText={searchText}
-          isSearchCollapsed={isSearchCollapsed}
-          onToggleSearchCollapse={onToggleSearchCollapse}
+          isSearchCollapsed={searchCollapsedCollectionUids.has(resolved.uid)}
+          toggleSearchCollection={toggleSearchCollection}
           openBulkMenu={openBulkMenu}
           isCollectionMultiDragDisabled={isCollectionMultiDragDisabled}
           multiDragCollections={multiDragCollections}
@@ -60,8 +54,6 @@ const renderRow = (props) => {
           collectionUid={row.collectionUid}
           collectionPathname={row.collectionPathname}
           searchText={searchText}
-          isSearchCollapsed={isSearchCollapsed}
-          onToggleSearchCollapse={onToggleSearchCollapse}
           openBulkMenu={openBulkMenu}
           isItemMultiDragDisabled={isItemMultiDragDisabled}
           multiDragCollections={multiDragCollections}
@@ -108,6 +100,7 @@ const SidebarRow = (props) => {
   return (
     <div
       data-sidebar-row
+      data-row-uid={row.exampleUid || row.itemUid || row.collectionUid || undefined}
       data-collection-id={row.collectionId || undefined}
       data-collection-uid={row.collectionUid || undefined}
       data-parent-name={row.parentName || undefined}
@@ -133,8 +126,7 @@ const areEqual = (prev, next) => {
     && a.collectionPathname === b.collectionPathname
     && a.exampleIndex === b.exampleIndex
     && prev.searchText === next.searchText
-    && isRowSearchCollapsed(prev) === isRowSearchCollapsed(next)
-    && prev.onToggleSearchCollapse === next.onToggleSearchCollapse
+    && prev.searchCollapsedCollectionUids === next.searchCollapsedCollectionUids
     && prev.isCollectionMultiDragDisabled === next.isCollectionMultiDragDisabled
     && prev.isItemMultiDragDisabled === next.isItemMultiDragDisabled
     && prev.multiDragCollections === next.multiDragCollections

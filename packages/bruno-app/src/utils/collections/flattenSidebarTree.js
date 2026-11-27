@@ -48,7 +48,6 @@ const walkChildren = (
     collectionId,
     hasSearch,
     searchText,
-    collapsedUids,
     appendRow,
     addItemToIndex
   } = collectionContext;
@@ -84,7 +83,7 @@ const walkChildren = (
     addItemToIndex(folder.uid, folder);
 
     // Search reveals matching descendants regardless of the collapsed state.
-    const isExpanded = hasSearch ? !collapsedUids.has(folder.uid) : !folder.collapsed;
+    const isExpanded = hasSearch || !folder.collapsed;
 
     if (!isExpanded) continue;
 
@@ -183,7 +182,7 @@ const flattenCollection = ({
   collection,
   hasSearch,
   searchText,
-  collapsedUids,
+  searchCollapsedCollectionUids,
   appendRow,
   addItemToIndex,
   addCollectionToIndex
@@ -212,8 +211,7 @@ const flattenCollection = ({
 
   addCollectionToIndex(collection.uid, collection);
 
-  // Search reveals matching descendants regardless of the collapsed state.
-  const isExpanded = hasSearch ? !collapsedUids.has(collection.uid) : !collection.collapsed;
+  const isExpanded = hasSearch ? !searchCollapsedCollectionUids.has(collection.uid) : !collection.collapsed;
 
   if (!isExpanded) return;
 
@@ -223,7 +221,6 @@ const flattenCollection = ({
     collectionId,
     hasSearch,
     searchText,
-    collapsedUids,
     appendRow,
     addItemToIndex
   };
@@ -260,7 +257,7 @@ const flattenCollection = ({
  * each row carry only structural data.
  *
  * @param {Array} sidebarEntries
- * @param {{ searchText?: string }} options
+ * @param {{ searchText?: string, searchCollapsedCollectionUids?: Set<string> }} options
  * @returns {{
  *   rows: Array<Object>,
  *   itemsByUid: Map,
@@ -268,14 +265,26 @@ const flattenCollection = ({
  * }}
  */
 export const flattenSidebarTree = (sidebarEntries = [], options = {}) => {
-  const { searchText = '', collapsedUids = new Set() } = options;
+  const { searchText = '', searchCollapsedCollectionUids = new Set() } = options;
   const hasSearch = Boolean(searchText.trim());
 
   const rows = [];
   const itemsByUid = new Map();
   const collectionsByUid = new Map();
+  const rowIndexByItemUid = new Map();
+  const rowIndexByCollectionUid = new Map();
 
-  const appendRow = (row) => rows.push(row);
+  const appendRow = (row) => {
+    const index = rows.push(row) - 1;
+
+    if (row.kind === 'collection' && row.collectionUid) {
+      rowIndexByCollectionUid.set(row.collectionUid, index);
+    } else if (row.kind === 'example' && row.exampleUid) {
+      rowIndexByItemUid.set(row.exampleUid, index);
+    } else if (row.itemUid && ['folder', 'app', 'request'].includes(row.kind)) {
+      rowIndexByItemUid.set(row.itemUid, index);
+    }
+  };
   const addItemToIndex = (uid, item) => itemsByUid.set(uid, item);
   const addCollectionToIndex = (uid, collection) =>
     collectionsByUid.set(uid, collection);
@@ -306,7 +315,7 @@ export const flattenSidebarTree = (sidebarEntries = [], options = {}) => {
       collection: entry.collection,
       hasSearch,
       searchText,
-      collapsedUids,
+      searchCollapsedCollectionUids,
       appendRow,
       addItemToIndex,
       addCollectionToIndex
@@ -316,36 +325,7 @@ export const flattenSidebarTree = (sidebarEntries = [], options = {}) => {
   return {
     rows,
     itemsByUid,
-    collectionsByUid
-  };
-};
-
-/**
- * lookups from item/collection UIDs to their row positions.
- * needed for active tab to scroll into view in sidebar
- */
-export const buildIndexes = (rows = []) => {
-  const rowIndexByItemUid = new Map();
-  const rowIndexByCollectionUid = new Map();
-
-  rows.forEach((row, index) => {
-    if (row.kind === 'collection' && row.collectionUid) {
-      rowIndexByCollectionUid.set(row.collectionUid, index);
-    }
-
-    if (
-      ['folder', 'app', 'request'].includes(row.kind)
-      && row.itemUid
-    ) {
-      rowIndexByItemUid.set(row.itemUid, index);
-    }
-
-    if (row.kind === 'example' && row.exampleUid) {
-      rowIndexByItemUid.set(row.exampleUid, index);
-    }
-  });
-
-  return {
+    collectionsByUid,
     rowIndexByItemUid,
     rowIndexByCollectionUid
   };

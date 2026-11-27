@@ -11,7 +11,7 @@ const config = {
       builtAt: new Date().toISOString()
     }
   },
-  electronVersion: '37.6.1',
+  electronVersion: '43.8.4',
   directories: {
     buildResources: 'resources',
     output: 'out'
@@ -22,7 +22,14 @@ const config = {
       to: 'data/sample-collection.json'
     }
   ],
-  files: ['**/*'],
+  // @vscode/ripgrep-universal ships rg for every platform; keep only the build target's binary,
+  // outside the asar so it can be spawned (ripgrep-process.js rewrites rgPath to app.asar.unpacked)
+  files: [
+    '**/*',
+    '!**/node_modules/@vscode/ripgrep-universal/bin/**',
+    '**/node_modules/@vscode/ripgrep-universal/bin/${platform}-${arch}/**'
+  ],
+  asarUnpack: ['**/node_modules/@vscode/ripgrep-universal/bin/**'],
   afterSign: 'notarize.js',
   mac: {
     artifactName: '${name}_${version}_${arch}_${os}.${ext}',
@@ -82,7 +89,9 @@ const config = {
     ],
     category: 'Development',
     desktop: {
-      MimeType: 'x-scheme-handler/bruno;'
+      entry: {
+        MimeType: 'x-scheme-handler/bruno;'
+      }
     }
   },
   deb: {
@@ -100,6 +109,15 @@ const config = {
       'libasound2' // #1036
     ]
   },
+  // Bundle git so Snap/sandbox installs can find it (#5667)
+  snap: {
+    stagePackages: ['default', 'git'],
+    // electron-builder's app part strips usr/bin, so expose git from git-core
+    environment: {
+      PATH: '$SNAP/usr/lib/git-core:$SNAP/usr/sbin:$SNAP/usr/bin:$SNAP/sbin:$SNAP/bin:$PATH',
+      GIT_EXEC_PATH: '$SNAP/usr/lib/git-core'
+    }
+  },
   win: {
     artifactName: '${name}_${version}_${arch}_win.${ext}',
     icon: 'resources/icons/win/icon.ico',
@@ -109,8 +127,9 @@ const config = {
         arch: ['x64', 'arm64']
       }
     ],
-    sign: null,
-    publisherName: 'Bruno Software Inc'
+    signtoolOptions: {
+      publisherName: 'Bruno Software Inc'
+    }
   },
   nsis: {
     include: 'resources/installer.nsh',

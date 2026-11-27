@@ -1,6 +1,5 @@
 import React from 'react';
 import SensitiveFieldWarning from 'components/SensitiveFieldWarning';
-import { useDetectSensitiveField } from 'hooks/useDetectSensitiveField';
 import get from 'lodash/get';
 import { useTheme } from 'providers/Theme';
 import { useDispatch } from 'react-redux';
@@ -8,13 +7,11 @@ import SingleLineEditor from 'components/SingleLineEditor';
 import { sendRequest } from 'providers/ReduxStore/slices/collections/actions';
 import StyledWrapper from './StyledWrapper';
 
-const BasicAuth = ({ item, collection, updateAuth, request, save, disabled }) => {
+const BasicAuth = ({ item, collection, updateAuth, request, save, readOnly }) => {
   const dispatch = useDispatch();
   const { storedTheme } = useTheme();
 
   const basicAuth = get(request, 'auth.basic', {});
-  const { isSensitive } = useDetectSensitiveField(collection);
-  const { showWarning, warningMessage } = isSensitive(basicAuth?.password);
 
   const handleRun = () => dispatch(sendRequest(item, collection.uid));
 
@@ -53,7 +50,7 @@ const BasicAuth = ({ item, collection, updateAuth, request, save, disabled }) =>
   return (
     <StyledWrapper className="w-full">
       <label className="block mb-1">Username</label>
-      <div className="single-line-editor-wrapper mb-3">
+      <div className="single-line-editor-wrapper mb-3" data-testid="auth-basic-username">
         <SingleLineEditor
           value={basicAuth.username || ''}
           theme={storedTheme}
@@ -62,13 +59,13 @@ const BasicAuth = ({ item, collection, updateAuth, request, save, disabled }) =>
           onRun={handleRun}
           collection={collection}
           item={item}
-          readOnly={disabled}
+          readOnly={readOnly}
           isCompact
         />
       </div>
 
       <label className="block mb-1">Password</label>
-      <div className="single-line-editor-wrapper flex items-center">
+      <div className="single-line-editor-wrapper flex items-center" data-testid="auth-basic-password">
         <SingleLineEditor
           value={basicAuth.password || ''}
           theme={storedTheme}
@@ -78,10 +75,10 @@ const BasicAuth = ({ item, collection, updateAuth, request, save, disabled }) =>
           collection={collection}
           item={item}
           isSecret={true}
-          readOnly={disabled}
+          readOnly={readOnly}
           isCompact
         />
-        {showWarning && <SensitiveFieldWarning fieldName="basic-password" warningMessage={warningMessage} />}
+        <SensitiveFieldWarning fieldName="basic-password" secretName="password" value={basicAuth?.password} collection={collection} item={item} fieldKey="password" onReplaceValue={handlePasswordChange} />
       </div>
     </StyledWrapper>
   );

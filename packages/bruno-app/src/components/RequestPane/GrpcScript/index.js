@@ -15,25 +15,21 @@ const HOOKS = {
   beforeCallStart: {
     label: 'Before Call Start',
     scriptType: SCRIPT_TYPES.BEFORE_CALL_START,
-    showHintsFor: ['bru', 'grpc:before-call-start'],
     errorMessageKey: 'beforeCallStartScriptErrorMessage'
   },
   beforeMessageSend: {
     label: 'Before Message Send',
     scriptType: SCRIPT_TYPES.BEFORE_MESSAGE_SEND,
-    showHintsFor: ['bru', 'grpc:before-message-send'],
     errorMessageKey: 'beforeMessageSendScriptErrorMessage'
   },
   afterMessageReceive: {
     label: 'After Message Receive',
     scriptType: SCRIPT_TYPES.AFTER_MESSAGE_RECEIVE,
-    showHintsFor: ['bru', 'grpc:after-message-receive'],
     errorMessageKey: 'afterMessageReceiveScriptErrorMessage'
   },
   afterCallEnd: {
     label: 'After Call End',
     scriptType: SCRIPT_TYPES.AFTER_CALL_END,
-    showHintsFor: ['bru', 'grpc:after-call-end'],
     errorMessageKey: 'afterCallEndScriptErrorMessage'
   }
 };
@@ -61,7 +57,7 @@ const GrpcScript = ({ item, collection, handleRun }) => {
   return (
     <div className="w-full h-full flex flex-col">
       <Tabs value={activeTab} onValueChange={(tab) => dispatch(updateScriptPaneTab({ uid: item.uid, scriptPaneTab: tab }))}>
-        <TabsList>
+        <TabsList dataTestId="script-sub-tabs">
           {panes.map(({ hook, label, scriptType, code, errorMessageKey }) => (
             <TabsTrigger key={hook} value={scriptType}>
               {label}
@@ -70,7 +66,7 @@ const GrpcScript = ({ item, collection, handleRun }) => {
           ))}
         </TabsList>
 
-        {panes.map(({ hook, scriptType, showHintsFor, code }) => (
+        {panes.map(({ hook, scriptType, code }) => (
           <ScriptEditorPane
             key={hook}
             item={item}
@@ -78,7 +74,7 @@ const GrpcScript = ({ item, collection, handleRun }) => {
             scriptType={scriptType}
             value={code}
             isActive={activeTab === scriptType}
-            showHintsFor={showHintsFor}
+            showHintsFor={['bru']}
             onEdit={(script) =>
               dispatch(updateGrpcScript({ hook, script, itemUid: item.uid, collectionUid: collection.uid }))}
             onRun={handleRun}

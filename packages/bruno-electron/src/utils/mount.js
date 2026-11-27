@@ -12,6 +12,13 @@ const hashFileAsync = async (absPath) => sha256(await fs.promises.readFile(absPa
 const idForAbsolutePath = (absolutePath) => sha256(posixifyPath(absolutePath)).slice(0, 21);
 const uidForSeed = (seed) => sha256(seed).slice(0, 21);
 
+// null when absolutePath is not inside root
+const relativePathWithin = (root, absolutePath) => {
+  const relativePath = path.relative(root, absolutePath);
+  const escapesRoot = relativePath === '..' || relativePath.startsWith(`..${path.sep}`);
+  return escapesRoot || path.isAbsolute(relativePath) ? null : relativePath;
+};
+
 const resolveDenylist = (patterns) => [...DEFAULT_DENYLIST, ...(patterns || [])];
 
 const GLOB_METACHAR = /[*?[\]{}]/;
@@ -39,9 +46,7 @@ const isDenied = (relativePathPosix, patterns) => {
   return false;
 };
 
-// Lists the files under root. When `folders` is an array, every folder that is walked into is added to it too
-// (relative paths), so empty folders are known as well.
-const walk = (root, denylist, folders = null) => {
+const walk = (root, denylist) => {
   const out = [];
   const visited = new Set();
   const visit = (absDir, relDir) => {
@@ -75,7 +80,6 @@ const walk = (root, denylist, folders = null) => {
       if (isDir) {
         if (DENY_DIRS.has(entry.name)) continue;
         if (matchesPlainPrefix(posixifyPath(childRel), denylist)) continue;
-        if (folders) folders.push(childRel);
         visit(childAbs, childRel);
       } else if (isFile) {
         if (isDenied(posixifyPath(childRel), denylist)) continue;
@@ -87,8 +91,8 @@ const walk = (root, denylist, folders = null) => {
   return out;
 };
 
-const COLLECTION_ROOT_BASENAMES = new Set(['collection.bru', 'collection.yml', 'opencollection.yml']);
-const FOLDER_ROOT_BASENAMES = new Set(['folder.bru', 'folder.yml']);
+const COLLECTION_ROOT_BASENAMES = new Set(['collection.bru', 'collection.yml', 'collection.yaml', 'opencollection.yml']);
+const FOLDER_ROOT_BASENAMES = new Set(['folder.bru', 'folder.yml', 'folder.yaml']);
 const BRUNO_CONFIG_BASENAME = 'bruno.json';
 const ENVIRONMENTS_DIR = 'environments';
 
@@ -124,11 +128,13 @@ module.exports = {
   FOLDER_ROOT_BASENAMES,
   BRUNO_CONFIG_BASENAME,
   ENVIRONMENTS_DIR,
+  DENY_DIRS,
   hashFile,
   hashFileAsync,
   posixifyPath,
   idForAbsolutePath,
   uidForSeed,
+  relativePathWithin,
   resolveDenylist,
   isDenied,
   walk,

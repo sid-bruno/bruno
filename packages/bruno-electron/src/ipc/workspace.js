@@ -261,10 +261,6 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
     }
   });
 
-  ipcMain.handle('renderer:set-active-workspace', async (event, workspacePath) => {
-    if (!workspacePath) return;
-  });
-
   ipcMain.handle('renderer:rename-workspace', async (event, workspacePath, newName) => {
     try {
       await updateWorkspaceName(workspacePath, newName);
@@ -330,7 +326,7 @@ const registerWorkspaceIpc = (mainWindow, workspaceWatcher) => {
             const entryArchivePath = archivePath ? path.join(archivePath, entry.name) : entry.name;
 
             if (entry.isDirectory()) {
-              if (!ignoredDirectories.includes(entry.name)) {
+              if (!ignoredDirectories.includes(entry.name.toLowerCase())) {
                 addDirectoryToArchive(fullPath, entryArchivePath);
               }
             } else {

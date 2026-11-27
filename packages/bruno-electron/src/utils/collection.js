@@ -8,7 +8,7 @@ const { preferencesUtil } = require('../store/preferences');
 const path = require('path');
 const { DEFAULT_COLLECTION_FORMAT } = require('@usebruno/filestore');
 const { parseValueByDataType } = require('@usebruno/common/utils');
-const { GRPC_SCRIPT_KEYS, getEffectiveTags, getFolderTags, getOwnTags } = require('@usebruno/common');
+const { GRPC_SCRIPT_KEYS, getEffectiveTags, getFolderTags, getOwnTags, normalizeLineEndings } = require('@usebruno/common');
 
 /**
  * Returns the variable's runtime value with datatype-driven coercion applied.
@@ -171,6 +171,8 @@ const wrapScriptInClosure = (script, scopeInfo = null, sourcePaths = null) => {
     return '';
   }
 
+  const normalizedScript = normalizeLineEndings(script);
+
   // Wrap script in async IIFE to create isolated scope
   // This prevents variable re-declaration errors and allows early returns
   // to only affect the current script segment
@@ -180,7 +182,7 @@ const wrapScriptInClosure = (script, scopeInfo = null, sourcePaths = null) => {
   const dirnameParam = sourcePaths?.dirname != null ? JSON.stringify(sourcePaths.dirname) : 'undefined';
   const filenameParam = sourcePaths?.filename != null ? JSON.stringify(sourcePaths.filename) : 'undefined';
   return `await (async (__dirname, __filename) => {${scopeSetter}
-${script}
+${normalizedScript}
 })(${dirnameParam}, ${filenameParam});`;
 };
 
@@ -572,12 +574,13 @@ const parseYmlFileMeta = (data) => {
     const yaml = require('js-yaml');
     const parsed = yaml.load(data);
 
-    if (!parsed || !parsed.meta) {
-      console.log('No "meta" section found in YAML file.');
+    if (!parsed || !parsed.info) {
+      console.log('No "info" section found in YAML file.');
       return null;
     }
 
-    const metaJson = parsed.meta;
+    const metaJson = parsed.info;
+    const requestJson = parsed.http || parsed.graphql || parsed.grpc || parsed.websocket || {};
 
     // Transform to the format expected by bruno-app
     let requestType = metaJson.type;
@@ -585,7 +588,8 @@ const parseYmlFileMeta = (data) => {
       http: 'http-request',
       graphql: 'graphql-request',
       grpc: 'grpc-request',
-      ws: 'ws-request'
+      ws: 'ws-request',
+      websocket: 'ws-request'
     };
     requestType = typeMap[requestType] || 'http-request';
 
@@ -597,8 +601,8 @@ const parseYmlFileMeta = (data) => {
       settings: {},
       tags: metaJson.tags || [],
       request: {
-        method: '',
-        url: '',
+        method: requestJson.method || '',
+        url: requestJson.url || '',
         params: [],
         headers: [],
         auth: { mode: 'none' },

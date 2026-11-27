@@ -44,6 +44,7 @@ const Tests = ({ collection, folder }) => {
         <CodeEditor
           ref={testsEditorRef}
           collection={collection}
+          testId="folder-tests-editor"
           docKey="folder-tests"
           value={tests || ''}
           theme={displayedTheme}
@@ -53,6 +54,7 @@ const Tests = ({ collection, folder }) => {
           font={get(preferences, 'font.codeFont', 'default')}
           fontSize={get(preferences, 'font.codeFontSize')}
           showHintsFor={['req', 'res', 'bru']}
+          scriptType="tests"
           initialScroll={testsScroll}
           onScroll={setTestsScroll}
         />

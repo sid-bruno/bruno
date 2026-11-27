@@ -17,7 +17,7 @@ import {
   isItemARequest
 } from 'utils/collections';
 import { parsePathParams, splitOnFirst } from 'utils/url';
-import { applyScriptEnvVars, getScriptModifiedKeys } from 'utils/environments';
+import { applyScriptEnvVars, getScriptModifiedKeys, preserveVariableUids } from 'utils/environments';
 import { getSubdirectoriesFromRoot } from 'utils/common/platform';
 import toast from 'react-hot-toast';
 import mime from 'mime-types';
@@ -26,6 +26,7 @@ import { getUniqueTagsFromItems } from 'utils/collections/index';
 import { DEFAULT_HTTP_ITEM_SETTINGS, GRPC_SCRIPT_KEYS, SCRIPT_TYPES } from '@usebruno/common';
 import * as exampleReducers from './exampleReducers';
 import * as mockResponseEditorReducers from './mockResponseEditorReducers';
+import { closeTabs, closeAllCollectionTabs } from 'providers/ReduxStore/slices/tabs';
 
 const FILE_DERIVED_REQUEST_FIELDS = [
   'name',
@@ -239,6 +240,20 @@ const initiatedWsResponse = {
 
 // Properties prefixed with `_` (e.g. `_scriptEnvBaseline`) are transient runtime state —
 // never persisted to disk or included in exports.
+const applyDataType = (variable, dataType) => {
+  if (dataType === undefined) {
+    return variable;
+  }
+
+  if (dataType === 'string') {
+    delete variable.dataType;
+  } else {
+    variable.dataType = dataType;
+  }
+
+  return variable;
+};
+
 export const collectionsSlice = createSlice({
   name: 'collections',
   initialState,
@@ -373,6 +388,16 @@ export const collectionsSlice = createSlice({
 
       if (collection) {
         collection.settingsSelectedTab = tab;
+      }
+    },
+
+    updateSettingsSection: (state, action) => {
+      const { collectionUid, section } = action.payload;
+
+      const collection = findCollectionByUid(state.collections, collectionUid);
+
+      if (collection) {
+        collection.settingsSection = section;
       }
     },
     updatedFolderSettingsSelectedTab: (state, action) => {
@@ -2253,13 +2278,18 @@ export const collectionsSlice = createSlice({
           if (type === 'request') {
             item.draft.request.vars = item.draft.request.vars || {};
             item.draft.request.vars.req = item.draft.request.vars.req || [];
-            item.draft.request.vars.req.push({
-              uid: uuid(),
-              name: varData.name || '',
-              value: varData.value || '',
-              local: varData.local === true,
-              enabled: varData.enabled !== false
-            });
+            item.draft.request.vars.req.push(
+              applyDataType(
+                {
+                  uid: uuid(),
+                  name: varData.name || '',
+                  value: varData.value || '',
+                  local: varData.local === true,
+                  enabled: varData.enabled !== false
+                },
+                varData.dataType
+              )
+            );
           } else if (type === 'response') {
             item.draft.request.vars = item.draft.request.vars || {};
             item.draft.request.vars.res = item.draft.request.vars.res || [];
@@ -2295,6 +2325,7 @@ export const collectionsSlice = createSlice({
               reqVar.value = action.payload.var.value;
               reqVar.description = action.payload.var.description;
               reqVar.enabled = action.payload.var.enabled;
+              applyDataType(reqVar, action.payload.var.dataType);
             }
           } else if (type === 'response') {
             item.draft.request.vars = item.draft.request.vars || {};
@@ -2626,12 +2657,17 @@ export const collectionsSlice = createSlice({
         }
         if (type === 'request') {
           const vars = get(folder, 'draft.request.vars.req', []);
-          vars.push({
-            uid: uuid(),
-            name: varData.name || '',
-            value: varData.value || '',
-            enabled: varData.enabled !== false
-          });
+          vars.push(
+            applyDataType(
+              {
+                uid: uuid(),
+                name: varData.name || '',
+                value: varData.value || '',
+                enabled: varData.enabled !== false
+              },
+              varData.dataType
+            )
+          );
           set(folder, 'draft.request.vars.req', vars);
         } else if (type === 'response') {
           const vars = get(folder, 'draft.request.vars.res', []);
@@ -2659,6 +2695,7 @@ export const collectionsSlice = createSlice({
           if (_var) {
             _var.name = action.payload.var.name;
             _var.value = action.payload.var.value;
+            applyDataType(_var, action.payload.var.dataType);
             _var.description = action.payload.var.description;
             _var.enabled = action.payload.var.enabled;
           }
@@ -2669,6 +2706,7 @@ export const collectionsSlice = createSlice({
           if (_var) {
             _var.name = action.payload.var.name;
             _var.value = action.payload.var.value;
+            applyDataType(_var, action.payload.var.dataType);
             _var.description = action.payload.var.description;
             _var.enabled = action.payload.var.enabled;
           }
@@ -2888,12 +2926,17 @@ export const collectionsSlice = createSlice({
         }
         if (type === 'request') {
           const vars = get(collection, 'draft.root.request.vars.req', []);
-          vars.push({
-            uid: uuid(),
-            name: varData.name || '',
-            value: varData.value || '',
-            enabled: varData.enabled !== false
-          });
+          vars.push(
+            applyDataType(
+              {
+                uid: uuid(),
+                name: varData.name || '',
+                value: varData.value || '',
+                enabled: varData.enabled !== false
+              },
+              varData.dataType
+            )
+          );
           set(collection, 'draft.root.request.vars.req', vars);
         } else if (type === 'response') {
           const vars = get(collection, 'draft.root.request.vars.res', []);
@@ -2923,6 +2966,7 @@ export const collectionsSlice = createSlice({
           if (_var) {
             _var.name = action.payload.var.name;
             _var.value = action.payload.var.value;
+            applyDataType(_var, action.payload.var.dataType);
             _var.description = action.payload.var.description;
             _var.enabled = action.payload.var.enabled;
           }
@@ -2933,6 +2977,7 @@ export const collectionsSlice = createSlice({
           if (_var) {
             _var.name = action.payload.var.name;
             _var.value = action.payload.var.value;
+            applyDataType(_var, action.payload.var.dataType);
             _var.description = action.payload.var.description;
             _var.enabled = action.payload.var.enabled;
           }
@@ -3196,6 +3241,12 @@ export const collectionsSlice = createSlice({
         });
       }
     },
+    collectionAddBatchEvent: (state, action) => {
+      for (const { type, payload } of action.payload.events) {
+        if (type === 'addDir') collectionsSlice.caseReducers.collectionAddDirectoryEvent(state, { payload: { dir: payload } });
+        else if (type === 'addFile') collectionsSlice.caseReducers.collectionAddFileEvent(state, { payload: { file: payload } });
+      }
+    },
     collectionChangeFileEvent: (state, action) => {
       const { file } = action.payload;
       const isCollectionRoot = file.meta.collectionRoot ? true : false;
@@ -3321,7 +3372,8 @@ export const collectionsSlice = createSlice({
         if (existingEnv) {
           existingEnv.name = environment.name;
           existingEnv.pathname = environment.pathname;
-          existingEnv.variables = environment.variables;
+          // One file was reloaded. Copy saved row ids onto the new rows in the same position.
+          existingEnv.variables = preserveVariableUids(existingEnv.variables, environment.variables);
           existingEnv.color = environment.color;
           existingEnv.externalSecrets = environment.externalSecrets;
           existingEnv.extends = environment.extends;
@@ -4256,8 +4308,24 @@ export const collectionsSlice = createSlice({
     syncMockResponseEditorSaved: mockResponseEditorReducers.syncMockResponseEditorSaved,
     updateMockResponseRules: mockResponseEditorReducers.updateMockResponseRules,
     cancelMockResponseEditorEdit: mockResponseEditorReducers.cancelMockResponseEditorEdit,
+    setMockResponseEditMode: mockResponseEditorReducers.setMockResponseEditMode,
     removeMockResponseEditor: mockResponseEditorReducers.removeMockResponseEditor
     /* End Response Example Actions */
+  },
+  extraReducers: (builder) => {
+    builder.addCase(closeTabs, (state, action) => {
+      for (const tabUid of action.payload.tabUids || []) {
+        delete state.mockResponseEditors[tabUid];
+      }
+    });
+    builder.addCase(closeAllCollectionTabs, (state, action) => {
+      const { collectionUid } = action.payload;
+      for (const responseUid of Object.keys(state.mockResponseEditors)) {
+        if (state.mockResponseEditors[responseUid]?.collectionUid === collectionUid) {
+          delete state.mockResponseEditors[responseUid];
+        }
+      }
+    });
   }
 });
 
@@ -4274,6 +4342,7 @@ export const {
   sortCollections,
   updateLastAction,
   updateSettingsSelectedTab,
+  updateSettingsSection,
   updatedFolderSettingsSelectedTab,
   collectionUnlinkEnvFileEvent,
   saveEnvironment,
@@ -4400,6 +4469,7 @@ export const {
   updateCollectionProtobuf,
   collectionAddFileEvent,
   collectionAddDirectoryEvent,
+  collectionAddBatchEvent,
   collectionChangeFileEvent,
   collectionUnlinkFileEvent,
   collectionUnlinkDirectoryEvent,
@@ -4486,6 +4556,7 @@ export const {
   syncMockResponseEditorSaved,
   updateMockResponseRules,
   cancelMockResponseEditorEdit,
+  setMockResponseEditMode,
   removeMockResponseEditor,
   addTransientDirectory,
   addSaveTransientRequestModal,

@@ -1,8 +1,7 @@
 const fs = require('node:fs');
 const path = require('path');
 const { app } = require('electron');
-const { DatabaseSync } = require('node:sqlite');
-const { createDatabase, DB, Statements, FileStore } = require('@usebruno/sqlite');
+const { createDatabase } = require('@usebruno/sqlite');
 
 let service = null;
 
@@ -26,10 +25,11 @@ class SqliteService {
   _db = null;
   _statements = null;
   _files = null;
+  _activeSecureDeletes = 0;
   constructor() {
     const userData = app.getPath('userData');
     const { db, statements, files } = createDatabase(path.join(userData, 'bruno.db'), {
-      pragmas: { auto_vacuum: 'INCREMENTAL', journal_mode: 'WAL', synchronous: 'NORMAL', busy_timeout: 5000 },
+      pragmas: { auto_vacuum: 'INCREMENTAL', journal_mode: 'WAL', synchronous: 'NORMAL' },
       filesDir: path.join(userData, 'sqlite-files'),
       inlineMaxBytes: 1024 * 1024
     });
@@ -58,6 +58,30 @@ class SqliteService {
       this._db = null;
       this._statements = null;
       this._files = null;
+    }
+  }
+
+  async withSecureDelete(callback) {
+    const raw = this._db?._db;
+    if (!raw) return callback();
+
+    if (this._activeSecureDeletes === 0) raw.exec('PRAGMA secure_delete = ON');
+    this._activeSecureDeletes += 1;
+
+    try {
+      return await callback();
+    } finally {
+      this._activeSecureDeletes -= 1;
+      if (this._activeSecureDeletes === 0) this._endSecureDelete(raw);
+    }
+  }
+
+  _endSecureDelete(raw) {
+    try {
+      raw.exec('PRAGMA secure_delete = OFF');
+      raw.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (err) {
+      console.warn('failed to flush securely deleted pages: ', err);
     }
   }
 
@@ -94,17 +118,6 @@ class SqliteService {
 const openDatabase = () => {
   if (service) return;
   service = new SqliteService();
-};
-
-const attachDatabase = (userData) => {
-  if (service) return;
-  const raw = new DatabaseSync(path.join(userData, 'bruno.db'));
-  raw.exec('PRAGMA busy_timeout = 5000');
-  raw.exec('PRAGMA synchronous = NORMAL');
-  const db = Object.assign(Object.create(DB.prototype), { _db: raw });
-  const statements = new Statements(raw);
-  const files = new FileStore(raw, statements, { directory: path.join(userData, 'sqlite-files'), inlineMaxBytes: 1024 * 1024 });
-  service = { db, statements, files, shutdown: () => db.close() };
 };
 
 const shutdown = () => {
@@ -153,6 +166,8 @@ const transaction = (callback) => {
   return db._transaction(callback);
 };
 
+const withSecureDelete = (callback) => (service ? service.withSecureDelete(callback) : callback());
+
 const reclaimDiskSpace = (options) => (service ? service.reclaimDiskSpace(options) : Promise.resolve());
 
-module.exports = { openDatabase, attachDatabase, shutdown, getStatements, getFiles, transaction, reclaimDiskSpace };
+module.exports = { openDatabase, shutdown, getStatements, getFiles, transaction, withSecureDelete, reclaimDiskSpace };

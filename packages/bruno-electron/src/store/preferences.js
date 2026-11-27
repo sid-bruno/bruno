@@ -54,8 +54,7 @@ const defaultPreferences = {
     instances: []
   },
   beta: {
-    'openapi-sync': false,
-    'mock-server': true
+    'openapi-sync': false
   },
   onboarding: {
     hasLaunchedBefore: false,
@@ -65,6 +64,9 @@ const defaultPreferences = {
   general: {
     defaultLocation: '',
     defaultWorkspacePath: ''
+  },
+  openCollection: {
+    autoOpenFolderPicker: true
   },
   autoSave: {
     enabled: false,
@@ -79,17 +81,14 @@ const defaultPreferences = {
     },
     file: {
       enabled: false
-    },
-    searchIndex: {
-      enabled: false,
-      twoPass: false
     }
   },
   ai: {
     enabled: false,
     providers: {
-      openai: { enabled: false },
-      anthropic: { enabled: false }
+      'openai': { enabled: false },
+      'anthropic': { enabled: false },
+      'github-copilot': { enabled: false }
     },
     models: {},
     defaultModel: '',
@@ -180,8 +179,7 @@ const preferencesSchema = Yup.object().shape({
     })).optional()
   }),
   beta: Yup.object({
-    'openapi-sync': Yup.boolean(),
-    'mock-server': Yup.boolean()
+    'openapi-sync': Yup.boolean()
   }),
   onboarding: Yup.object({
     hasLaunchedBefore: Yup.boolean(),
@@ -191,6 +189,9 @@ const preferencesSchema = Yup.object().shape({
   general: Yup.object({
     defaultLocation: Yup.string().max(1024).nullable(),
     defaultWorkspacePath: Yup.string().max(1024).nullable()
+  }),
+  openCollection: Yup.object({
+    autoOpenFolderPicker: Yup.boolean()
   }),
   autoSave: Yup.object({
     enabled: Yup.boolean(),
@@ -205,11 +206,6 @@ const preferencesSchema = Yup.object().shape({
     }),
     file: Yup.object({
       enabled: Yup.boolean()
-    }),
-    searchIndex: Yup.object({
-      enabled: Yup.boolean(),
-      twoPass: Yup.boolean(),
-      buildTrigger: Yup.string().oneOf(['on-search'])
     })
   }).optional(),
   ai: Yup.object({
@@ -368,14 +364,6 @@ class PreferencesStore {
       }
     }
 
-    const hasExistingPreferences = Object.keys(preferences).length > 0;
-    const mockServerDefaultApplied = get(preferences, '_migrations.mockServerBetaOnByDefault', false);
-    if (hasExistingPreferences && !mockServerDefaultApplied) {
-      preferences.beta = { ...preferences.beta, 'mock-server': true };
-      preferences._migrations = { ...preferences._migrations, mockServerBetaOnByDefault: true };
-      this.store.set('preferences', preferences);
-    }
-
     // Migrate from defaultCollectionLocation to defaultLocation
     if (preferences.general?.defaultCollectionLocation !== undefined
       && preferences.general?.defaultLocation === undefined) {
@@ -454,12 +442,6 @@ const preferencesUtil = {
   },
   isFileCacheEnabled: () => {
     return get(getPreferences(), 'cache.file.enabled', false);
-  },
-  isSearchIndexEnabled: () => {
-    return get(getPreferences(), 'cache.searchIndex.enabled', false);
-  },
-  isTwoPassIndexingEnabled: () => {
-    return get(getPreferences(), 'cache.searchIndex.twoPass', false);
   },
   hasLaunchedBefore: () => {
     return get(getPreferences(), 'onboarding.hasLaunchedBefore', false);
